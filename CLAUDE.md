@@ -33,29 +33,50 @@ Action → Reducer → State → UI → Effect → (feeds back as Action)
 
 ## Folder structure
 ```
-core/
-  BaseViewModel.kt         abstract class
-  AppDispatchers.kt        injectable dispatchers
-  AppError.kt              sealed class
-features/
-  auth/
-    AuthState.kt           data class + computed
-    AuthAction.kt          sealed class + AuthEvent
-    AuthReducer.kt         pure function
-    AuthViewModel.kt       @HiltViewModel
-    AuthScreen.kt          @Composable
-data/
-  repository/
-    AuthRepository.kt      interface + live + fake
-domain/
-  model/
-    User.kt
-di/
-  RepositoryModule.kt      Hilt @Binds
-test/
-  auth/
-    AuthReducerTest.kt     zero mocks
-    AuthViewModelTest.kt   fake repository
+app/
+  src/
+    main/
+      AndroidManifest.xml
+      java/com/applyfuse/fuse/
+        FuseApplication.kt           @HiltAndroidApp
+        MainActivity.kt              @AndroidEntryPoint
+        core/
+          BaseViewModel.kt           abstract class
+          AppDispatchers.kt          injectable dispatchers
+          AppError.kt                sealed class
+        features/
+          auth/
+            AuthState.kt             data class + computed
+            AuthAction.kt            sealed class + AuthEvent
+            AuthReducer.kt           pure function
+            AuthViewModel.kt         @HiltViewModel
+            AuthScreen.kt            @Composable
+        data/
+          repository/
+            AuthRepository.kt        interface + live + fake
+        domain/
+          model/
+            User.kt
+        di/
+          RepositoryModule.kt        Hilt @Binds
+      res/
+        values/
+          strings.xml
+          themes.xml
+    test/
+      java/com/applyfuse/fuse/
+        features/
+          auth/
+            AuthReducerTest.kt       zero mocks
+            AuthViewModelTest.kt     fake repository
+gradle/
+  libs.versions.toml               version catalog
+  wrapper/
+    gradle-wrapper.properties
+build.gradle.kts                    root build
+settings.gradle.kts
+gradle.properties
+detekt.yml
 ```
 
 ## Naming conventions
@@ -75,6 +96,9 @@ test/
 
 # Run tests + lint together
 ./gradlew test detekt
+
+# Build debug APK
+./gradlew assembleDebug
 ```
 
 ## Commit message format

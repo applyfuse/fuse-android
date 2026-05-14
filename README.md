@@ -19,15 +19,24 @@
 ## Structure
 
 ```
-core/              BaseViewModel, AppDispatchers, AppError
-features/          One folder per feature
-data/              Repositories — interface + live + fake
-di/                Hilt modules
+app/src/main/java/com/applyfuse/fuse/
+  FuseApplication.kt     @HiltAndroidApp entry point
+  MainActivity.kt        @AndroidEntryPoint shell
+  core/                  BaseViewModel, AppDispatchers, AppError
+  features/              One folder per feature
+    auth/                State, Action, Reducer, ViewModel, Screen
+  data/repository/       Repositories — interface + live + fake
+  domain/model/          Domain models (User, etc.)
+  di/                    Hilt modules
+app/src/test/
+  features/auth/         AuthReducerTest, AuthViewModelTest
 ```
 
-## Run
+## Build
 
-Open in Android Studio → Run → Select emulator or device
+```bash
+./gradlew assembleDebug
+```
 
 ## Test
 
@@ -40,6 +49,10 @@ Open in Android Studio → Run → Select emulator or device
 ```bash
 ./gradlew detekt
 ```
+
+## Open in Android Studio
+
+File → Open → select the repo root folder → Android Studio detects the Gradle project automatically.
 
 ## Pattern
 

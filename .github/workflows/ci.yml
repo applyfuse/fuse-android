@@ -1,6 +1,5 @@
 # GitHub Actions CI — Android
-# Runs on every push to main and every pull request.
-# Two jobs run in parallel: tests and lint.
+# Uses gradle/actions/setup-gradle — no gradlew wrapper jar needed.
 
 name: Android CI
 
@@ -10,18 +9,13 @@ on:
   pull_request:
     branches: [main]
 
-# Cancel in-progress runs when a new push arrives.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
 
-  # ──────────────────────────────────────────────────────────
-  # Job 1: Run all unit tests
-  # FUSE reducer tests are pure functions — fast on Linux.
-  # No Android emulator needed for unit tests.
-  # ──────────────────────────────────────────────────────────
+  # ── Job 1: Unit tests ───────────────────────────────────
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -35,26 +29,27 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle  # caches ~/.gradle between runs — faster builds
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      # gradle/actions/setup-gradle handles the wrapper download
+      # automatically — no need for a wrapper jar in the repo.
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+          cache-read-only: false
 
       - name: Run unit tests
-        run: ./gradlew test --stacktrace
+        run: gradle test --stacktrace
 
       - name: Upload test reports
-        if: always()  # upload even on failure
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-android
           path: app/build/reports/tests/
           retention-days: 7
 
-  # ──────────────────────────────────────────────────────────
-  # Job 2: Detekt — Kotlin static analysis
-  # Runs in parallel with tests — both must pass for PR to merge.
-  # ──────────────────────────────────────────────────────────
+  # ── Job 2: Detekt ─────────────────────────────────────
   lint:
     name: Detekt
     runs-on: ubuntu-latest
@@ -68,13 +63,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Run Detekt
-        run: ./gradlew detekt
+        run: gradle detekt
 
       - name: Upload Detekt report
         if: always()
@@ -84,14 +80,11 @@ jobs:
           path: app/build/reports/detekt/
           retention-days: 7
 
-  # ──────────────────────────────────────────────────────────
-  # Job 3: Build APK — confirms the app compiles
-  # Does not run the app — just verifies the build succeeds.
-  # ──────────────────────────────────────────────────────────
+  # ── Job 3: Build APK (only after tests pass) ─────────────
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
-    needs: test  # only build if tests pass
+    needs: test
 
     steps:
       - name: Checkout code
@@ -102,13 +95,14 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        run: gradle assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

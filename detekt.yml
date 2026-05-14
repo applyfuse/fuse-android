@@ -1,0 +1,21 @@
+detekt:
+  config:
+    validation: true
+    warningsAsErrors: false
+
+complexity:
+  LongMethod:
+    threshold: 40
+  LongParameterList:
+    functionThreshold: 6
+
+style:
+  MaxLineLength:
+    maxLineLength: 140
+  WildcardImport:
+    active: true
+
+excludes:
+  - '**/test/**'
+  - '**/androidTest/**'
+  - '**/*.generated.kt'

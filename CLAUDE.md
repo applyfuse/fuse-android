@@ -7,72 +7,90 @@ No libraries. No dependencies. Just a clear mental model.
 
 Website: applyfuse.com
 GitHub org: github.com/applyfuse
+Docs: github.com/applyfuse/fuse-docs
 
 ## The pattern
 Action → Reducer → State → UI → Effect → (feeds back as Action)
 
 ## The 6 rules
-1. Reducer is always a pure function — no async, no side effects
+1. Reducer is always a pure function — no coroutines, no side effects
 2. UI only reads state — never mutates directly
-3. Effects live outside the reducer — in Store / ViewModel
+3. Effects live outside the reducer — in handleEffect()
 4. State is the single source of truth per feature
-5. Navigation is an Effect, never a State value
+5. Navigation is an Effect — never a State value
 6. Repositories are interface bound — always mockable
 
 ## Android stack
 - Kotlin / Jetpack Compose
-- Abstract BaseViewModel<S, A> — MutableStateFlow
-- Hilt for all DI — @HiltViewModel, @Inject
-- Coroutines with viewModelScope — no RxJava
-- MutableSharedFlow for one-time events (no replay)
+- Abstract BaseViewModel<S,A> — MutableStateFlow
+- Hilt for DI — @HiltViewModel, @Inject
+- Coroutines with viewModelScope
+- MutableSharedFlow (no replay) for one-time events
 - JUnit 5 + UnconfinedTestDispatcher for tests
 - minSdk 26, targetSdk 35
 - Jetpack Compose only — no XML layouts
+- Coroutines only — no RxJava
 
 ## Folder structure
 ```
 core/
-  BaseViewModel.kt         Generic BaseViewModel<S,A>
-  AppDispatchers.kt        Testable dispatchers
-  AppError.kt              Typed error model
+  BaseViewModel.kt         abstract class
+  AppDispatchers.kt        injectable dispatchers
+  AppError.kt              sealed class
 features/
   auth/
-    AuthState.kt
-    AuthAction.kt
-    AuthReducer.kt
-    AuthViewModel.kt
-    AuthScreen.kt
+    AuthState.kt           data class + computed
+    AuthAction.kt          sealed class + AuthEvent
+    AuthReducer.kt         pure function
+    AuthViewModel.kt       @HiltViewModel
+    AuthScreen.kt          @Composable
 data/
   repository/
-    AuthRepository.kt      Interface + live + fake
+    AuthRepository.kt      interface + live + fake
+domain/
+  model/
+    User.kt
 di/
-  RepositoryModule.kt      Hilt bindings
+  RepositoryModule.kt      Hilt @Binds
+test/
+  auth/
+    AuthReducerTest.kt     zero mocks
+    AuthViewModelTest.kt   fake repository
 ```
 
 ## Naming conventions
 - States: [Feature]State (data class)
 - Actions: [Feature]Action (sealed class)
 - Reducers: [feature]Reducer() — always a function, never a class
-- Effects: handled in ViewModel.handleEffect()
-- Repositories: [Feature]Repository interface + Live[Feature]Repository + Fake[Feature]Repository
+- Repositories: [Feature]Repository interface + Live + Fake
+- Events: [Feature]Event (sealed class conforming to FuseEvent)
 
-## Testing
-- Run tests: ./gradlew test
-- Run lint: ./gradlew detekt
-- Reducer tests need zero mocks — pure function in, assert output
-- Use UnconfinedTestDispatcher for ViewModel tests
-- Always write reducer tests before UI
+## Testing commands
+```bash
+# Run all unit tests
+./gradlew test
+
+# Run Detekt
+./gradlew detekt
+
+# Run tests + lint together
+./gradlew test detekt
+```
 
 ## Commit message format
+```
 feat(auth): add AuthReducer with tests
 fix(viewmodel): handle cancellation in handleEffect
 test(auth): add loginFailure reducer test
 docs(readme): update run instructions
+ci: update JDK version in workflow
+```
 
-## Current phase
-Phase 1 — Foundation (Week 1–2)
-Day 1: Folder structure + scaffolding ✔
-Day 2: BaseViewModel.kt + AppDispatchers.kt
-Day 3: AuthRepository interface + live + fake + Hilt module
-Day 4: AuthState + AuthAction
-Day 5: AuthReducer + JUnit 5 suite
+## Phase status
+Phase 1 — Foundation ✔ COMPLETE
+
+Phase 2 — Data layer (next)
+- Real network calls via Retrofit
+- Token storage in EncryptedSharedPreferences
+- Token refresh interceptor (OkHttp Authenticator)
+- Pagination in Feed feature (Paging 3)

@@ -8,22 +8,25 @@ plugins {
 }
 
 android {
-    namespace   = "com.applyfuse.fuse"
-    compileSdk  = 35
+    namespace  = "com.applyfuse.fuse"
+    compileSdk = 35
 
     defaultConfig {
-        applicationId   = "com.applyfuse.fuse"
-        minSdk          = 26
-        targetSdk       = 35
-        versionCode     = 1
-        versionName     = "0.1.0"
+        applicationId = "com.applyfuse.fuse"
+        minSdk        = 26
+        targetSdk     = 35
+        versionCode   = 1
+        versionName   = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
-            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 
@@ -43,6 +46,9 @@ android {
     testOptions {
         unitTests {
             isIncludeAndroidResources = true
+            all {
+                it.useJUnitPlatform()
+            }
         }
     }
 
@@ -54,10 +60,8 @@ android {
 }
 
 dependencies {
-    // Compose BOM — manages all Compose versions together
     val composeBom = platform(libs.compose.bom)
     implementation(composeBom)
-    androidTestImplementation(composeBom)
 
     // Compose
     implementation(libs.compose.ui)
@@ -67,9 +71,10 @@ dependencies {
     debugImplementation(libs.compose.ui.tooling)
     implementation(libs.compose.ui.tooling.preview)
 
-    // Lifecycle + ViewModel
+    // Lifecycle
     implementation(libs.lifecycle.viewmodel.compose)
     implementation(libs.lifecycle.runtime.compose)
+    implementation(libs.lifecycle.viewmodel.ktx)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)
@@ -87,16 +92,10 @@ dependencies {
     testImplementation(libs.mockk)
     testImplementation(libs.truth)
 
-    // Detekt rules
+    // Detekt
     detektPlugins(libs.detekt.formatting)
 }
 
-// Configure JUnit 5 for unit tests
-tasks.withType<Test> {
-    useJUnitPlatform()
-}
-
-// Detekt config
 detekt {
     config.setFrom(files("$rootDir/detekt.yml"))
     buildUponDefaultConfig = true

@@ -5,6 +5,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -150,10 +151,11 @@ class LiveHttpClient @Inject constructor(
         }
 
     private companion object {
-        val JSON_MEDIA_TYPE =
-            "application/json; charset=utf-8".let {
-                okhttp3.MediaType.parse(it)
-            }
+        // FUSE: OkHttp 4 idiom — String.toMediaType() extension, NOT
+        // the deprecated OkHttp 3 MediaType.parse() static. (The
+        // project compiles deprecation as error, so .parse() fails
+        // the build — fixed here.)
+        val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         const val UNAUTHORIZED = 401
         const val FORBIDDEN = 403

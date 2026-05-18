@@ -9,7 +9,6 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.DisplayName
@@ -52,6 +51,25 @@ class LiveHttpClientTest {
         server.shutdown()
     }
 
+    // FUSE: assertion helper for suspend functions. JUnit's
+    // assertThrows takes a NON-suspend lambda, so the earlier
+    // `assertThrows { runTest { suspendCall } }` was wrong — a
+    // nested runTest swallows/relocates the thrown exception and
+    // surfaces an IllegalStateException instead. The correct idiom
+    // inside an outer runTest is a direct try/catch: invoke the
+    // suspend call, fail if nothing is thrown, return the caught
+    // throwable for type/payload assertions. One helper, used by
+    // every error test, so the pattern is correct in exactly one
+    // place (FUSE: single source of truth).
+    private suspend fun captureError(block: suspend () -> Unit): AppError {
+        try {
+            block()
+        } catch (e: AppError) {
+            return e
+        }
+        throw AssertionError("Expected an AppError to be thrown, but none was")
+    }
+
     // MARK: — Success
 
     @Nested
@@ -85,26 +103,22 @@ class LiveHttpClientTest {
         @Test
         fun `401 maps to Unauthorized`() = runTest {
             server.enqueue(MockResponse().setResponseCode(401))
-            val error = assertThrows(AppError.Unauthorized::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
+            val error = captureError { httpClient.get("/x", identity) }
             assertTrue(error is AppError.Unauthorized)
         }
 
         @Test
         fun `403 maps to Forbidden — NOT Unauthorized`() = runTest {
             server.enqueue(MockResponse().setResponseCode(403))
-            assertThrows(AppError.Forbidden::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.Forbidden)
         }
 
         @Test
         fun `404 maps to NotFound`() = runTest {
             server.enqueue(MockResponse().setResponseCode(404))
-            assertThrows(AppError.NotFound::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.NotFound)
         }
 
         @Test
@@ -114,37 +128,33 @@ class LiveHttpClientTest {
                     .setResponseCode(422)
                     .setBody("{\"message\":\"Email already taken\"}")
             )
-            val error = assertThrows(AppError.Validation::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
-            assertEquals("Email already taken", error.message)
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.Validation)
+            assertEquals("Email already taken", (error as AppError.Validation).message)
         }
 
         @Test
         fun `422 with no message falls back to blank`() = runTest {
             server.enqueue(MockResponse().setResponseCode(422).setBody("{}"))
-            val error = assertThrows(AppError.Validation::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
-            assertEquals("", error.message)
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.Validation)
+            assertEquals("", (error as AppError.Validation).message)
         }
 
         @Test
         fun `other 4xx maps to ClientError with code`() = runTest {
             server.enqueue(MockResponse().setResponseCode(418))
-            val error = assertThrows(AppError.ClientError::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
-            assertEquals(418, error.statusCode)
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.ClientError)
+            assertEquals(418, (error as AppError.ClientError).statusCode)
         }
 
         @Test
         fun `5xx maps to ServerError with code`() = runTest {
             server.enqueue(MockResponse().setResponseCode(503))
-            val error = assertThrows(AppError.ServerError::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
-            assertEquals(503, error.statusCode)
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.ServerError)
+            assertEquals(503, (error as AppError.ServerError).statusCode)
         }
     }
 
@@ -161,9 +171,8 @@ class LiveHttpClientTest {
                     .setBody("late")
                     .setBodyDelay(5, TimeUnit.SECONDS)
             )
-            assertThrows(AppError.Timeout::class.java) {
-                runTest { httpClient.get("/slow", identity) }
-            }
+            val error = captureError { httpClient.get("/slow", identity) }
+            assertTrue(error is AppError.Timeout)
         }
 
         @Test
@@ -173,9 +182,8 @@ class LiveHttpClientTest {
             server.enqueue(
                 MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START)
             )
-            assertThrows(AppError.NetworkUnavailable::class.java) {
-                runTest { httpClient.get("/x", identity) }
-            }
+            val error = captureError { httpClient.get("/x", identity) }
+            assertTrue(error is AppError.NetworkUnavailable)
         }
     }
 
@@ -188,11 +196,10 @@ class LiveHttpClientTest {
         @Test
         fun `deserializer throwing maps to DecodingFailed`() = runTest {
             server.enqueue(MockResponse().setResponseCode(200).setBody("not-json"))
-            assertThrows(AppError.DecodingFailed::class.java) {
-                runTest {
-                    httpClient.get<String>("/x") { error("bad payload") }
-                }
+            val error = captureError {
+                httpClient.get<String>("/x") { error("bad payload") }
             }
+            assertTrue(error is AppError.DecodingFailed)
         }
     }
 }

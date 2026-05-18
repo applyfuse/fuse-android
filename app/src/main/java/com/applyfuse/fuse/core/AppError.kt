@@ -97,15 +97,24 @@ sealed class AppError : Exception() {
         }
 
     companion object {
-        // FUSE: Map any Throwable to a typed AppError at the repository boundary.
-        fun from(throwable: Throwable): AppError {
-            if (throwable is AppError) return throwable
-            // FUSE: Coroutine cancellation is control flow, not a
-            // failure. Map it to Cancelled so structured-concurrency
-            // teardown never surfaces as a user-visible error.
-            // (Checked BEFORE the message heuristics on purpose.)
-            if (throwable is CancellationException) return Cancelled
-            return when {
+        // FUSE: Map any Throwable to a typed AppError at the
+        // repository boundary.
+        // Usage: } catch (e: Exception) { throw AppError.from(e) }
+        //
+        // FUSE: Single return (ReturnCount = 2 limit). The ordering
+        // is deliberate and preserved by the when-arm order:
+        //   1. An AppError passes through unchanged.
+        //   2. Coroutine cancellation is control flow, not a
+        //      failure — mapped to Cancelled BEFORE the message
+        //      heuristics so structured-concurrency teardown never
+        //      surfaces as a user-visible error.
+        //   3. Otherwise classify by message heuristics.
+        fun from(throwable: Throwable): AppError =
+            when {
+                throwable is AppError ->
+                    throwable
+                throwable is CancellationException ->
+                    Cancelled
                 throwable.message?.contains("Unable to resolve host") == true ->
                     NetworkUnavailable
                 throwable.message?.contains("timeout") == true ->
@@ -113,6 +122,5 @@ sealed class AppError : Exception() {
                 else ->
                     Unknown(throwable.message ?: "")
             }
-        }
     }
 }

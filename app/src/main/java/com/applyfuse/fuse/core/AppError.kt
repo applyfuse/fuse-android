@@ -43,7 +43,11 @@ sealed class AppError : Exception() {
     // server's response envelope, not from AppError. message is the
     // server-supplied string; userMessage falls back to a generic
     // line when the server sends nothing usable.
-    data class Validation(val message: String) : AppError()
+    //
+    // FUSE: override is required — Throwable.message already exists
+    // on the supertype. Without it Kotlin 2.x promotes the hiding
+    // warning to a compile error. Same reason as Unknown below.
+    data class Validation(override val message: String) : AppError()
 
     // FUSE: The response body could not be decoded.
     object DecodingFailed : AppError()

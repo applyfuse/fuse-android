@@ -245,3 +245,49 @@ follow-up for whoever owns CI: add an instrumented-test job
 (emulator) so the encryption round-trip is actually verified
 somewhere, even if not in `ci-local.sh`. Until then, this gap is
 known and accepted, not hidden.
+
+### 2026-05-18 — Row 4: no `requiresAuth` flag (Option 2); leader-runs single-flight
+
+**Decision A — auth scoping (Option 2, user-confirmed).** The
+`HttpClient` interface keeps its row-2 signature: NO `requiresAuth:
+Boolean` parameter. `RefreshingHttpClient` treats *every* call
+through it as auth-bearing.
+
+The prose in "RefreshingHttpClient (single-flight)" above still
+mentions `requiresAuth = true/false`. That phrasing is **superseded
+for Android** by this decision. Recursion safety does not need a
+per-call flag: it comes entirely from the contract's existing
+mechanism — the `refresh` lambda calls the **bare** `HttpClient`,
+never the decorator, so a 401 on `/auth/refresh` cannot re-enter
+refresh logic. "Every call through the decorator wants auth; the one
+call that must not (the refresh itself) bypasses the decorator by
+construction" is the cleaner mental model for a reference
+architecture, and it avoids reopening the already-validated row-2
+interface and all its call sites.
+
+*Action for canon:* `fuse-docs/DATA_LAYER.md` should drop the
+`requiresAuth` language for Android (or confirm iOS also drops it).
+Flagged for the docs owner; the cross-platform contract is theirs to
+change, not this file's.
+
+**Decision B — single-flight structural note.** The contract says
+"first caller creates the Deferred **and awaits it**". The
+implementation has the leader create a `CompletableDeferred`, then
+**run `refresh()` directly** and `complete()` it — rather than
+launching the refresh into a scope and awaiting its own job.
+Concurrent callers still await the shared Deferred exactly as
+specified.
+
+Rationale: the await-your-own-launched-job variant needs a
+long-lived `CoroutineScope` to host the `async`, and risks a
+self-await if mis-scoped. The leader-runs-directly variant is
+**scope-free** (nothing to inject or leak), deadlock-free, and has
+*identical* single-flight semantics: exactly one refresh per wave,
+followers share it, the slot clears (`===`-checked) after
+completion so a later wave refreshes fresh. This is a structural
+implementation choice, not a behavioural deviation — recorded so a
+future reader comparing code to contract sees it was deliberate.
+
+Completes row 4: RefreshingHttpClient 6f2a1ce, tests ae5dfb2, this.
+Row 4 is NOT validated until ci-local.sh is green on phase-2 — same
+per-row discipline as rows 1–3.

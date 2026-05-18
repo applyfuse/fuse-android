@@ -48,47 +48,27 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
-// FUSE: AuthScreen is a pure rendering function.
-// It reads from state and calls vm.send() on interactions.
-// It never mutates state directly.
-//
-// Navigation events are collected in LaunchedEffect — NOT by
-// observing state.isLoggedIn in an if/else. SharedFlow fires
-// exactly once; state observation would re-fire on every
-// recomposition that sees isLoggedIn = true.
-
 @Composable
 fun AuthScreen(
-    // FUSE: Navigation callbacks injected from the NavHost.
-    // The screen doesn’t know what "navigate to home" means —
-    // it fires the callback and the NavHost decides.
     onNavigateToHome: () -> Unit = {},
     onNavigateToLogin: () -> Unit = {},
     viewModel: AuthViewModel = hiltViewModel()
 ) {
-    // FUSE: collectAsStateWithLifecycle() is lifecycle-aware.
-    // It stops collecting when the screen is not visible,
-    // preventing unnecessary recompositions in the background.
     val state by viewModel.state.collectAsStateWithLifecycle()
 
-    // FUSE: LaunchedEffect(Unit) runs once when the composable
-    // enters composition and cancels when it leaves.
-    // Collecting SharedFlow here means events are received
-    // exactly once — no replay, no duplication.
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is AuthEvent.NavigateToHome  -> onNavigateToHome()
+                is AuthEvent.NavigateToHome -> onNavigateToHome()
                 is AuthEvent.NavigateToLogin -> onNavigateToLogin()
-                is AuthEvent.ShowToast       -> { /* handled by error banner */ }
-                else                         -> Unit
+                is AuthEvent.ShowToast -> { /* handled by error banner */ }
+                else -> Unit
             }
         }
     }
@@ -99,16 +79,12 @@ fun AuthScreen(
     )
 }
 
-// FUSE: AuthContent is a stateless composable — it only takes
-// state and a callback. This makes it trivially previewable
-// and testable without a ViewModel.
 @Composable
 private fun AuthContent(
     state: AuthState,
     onAction: (AuthAction) -> Unit
 ) {
     val purple = Color(0xFF5D52CC)
-    val purpleLight = Color(0xFF7B6EF6)
 
     Box(
         modifier = Modifier
@@ -132,11 +108,8 @@ private fun AuthContent(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(0.dp)
         ) {
-            // Header
             AuthHeader()
             Spacer(modifier = Modifier.height(40.dp))
-
-            // Form fields
             EmailField(
                 email = state.email,
                 onEmailChange = { onAction(AuthAction.EmailChanged(it)) }
@@ -145,13 +118,13 @@ private fun AuthContent(
             PasswordField(
                 password = state.password,
                 onPasswordChange = { onAction(AuthAction.PasswordChanged(it)) },
-                onDone = { if (state.canSubmit) onAction(AuthAction.LoginTapped) }
+                onDone = {
+                    if (state.canSubmit) {
+                        onAction(AuthAction.LoginTapped)
+                    }
+                }
             )
             Spacer(modifier = Modifier.height(16.dp))
-
-            // FUSE: AnimatedVisibility wraps the error banner.
-            // It appears and disappears with animation when
-            // state.hasError changes — no manual show/hide logic.
             AnimatedVisibility(
                 visible = state.hasError,
                 enter = expandVertically() + fadeIn(),
@@ -163,22 +136,16 @@ private fun AuthContent(
                 )
                 Spacer(modifier = Modifier.height(16.dp))
             }
-
             Spacer(modifier = Modifier.height(8.dp))
-
-            // Login button
             LoginButton(
                 isLoading = state.isLoading,
                 canSubmit = state.canSubmit,
                 onClick = { onAction(AuthAction.LoginTapped) },
-                purple = purple,
-                purpleLight = purpleLight
+                purple = purple
             )
         }
     }
 }
-
-// MARK: — Header
 
 @Composable
 private fun AuthHeader() {
@@ -186,10 +153,7 @@ private fun AuthHeader() {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Text(
-            text = "\u26A1",
-            fontSize = 48.sp
-        )
+        Text(text = "\u26A1", fontSize = 48.sp)
         Text(
             text = "FUSE",
             fontSize = 36.sp,
@@ -205,8 +169,6 @@ private fun AuthHeader() {
     }
 }
 
-// MARK: — Email field
-
 @Composable
 private fun EmailField(
     email: String,
@@ -214,9 +176,6 @@ private fun EmailField(
 ) {
     OutlinedTextField(
         value = email,
-        // FUSE: onValueChange sends an action — never mutates
-        // a local variable. The state comes back down via
-        // collectAsStateWithLifecycle().
         onValueChange = onEmailChange,
         label = { Text("Email") },
         singleLine = true,
@@ -229,19 +188,12 @@ private fun EmailField(
     )
 }
 
-// MARK: — Password field
-
 @Composable
 private fun PasswordField(
     password: String,
     onPasswordChange: (String) -> Unit,
     onDone: () -> Unit
 ) {
-    // FUSE: isVisible is purely presentational — it controls
-    // whether the password characters are hidden or shown.
-    // It does NOT belong in AuthState because it has zero
-    // business logic significance. Local compose state is
-    // the correct home for pure UI-only state.
     var isVisible by remember { mutableStateOf(false) }
 
     OutlinedTextField(
@@ -249,19 +201,20 @@ private fun PasswordField(
         onValueChange = onPasswordChange,
         label = { Text("Password") },
         singleLine = true,
-        visualTransformation = if (isVisible)
+        visualTransformation = if (isVisible) {
             VisualTransformation.None
-        else
-            PasswordVisualTransformation(),
+        } else {
+            PasswordVisualTransformation()
+        },
         trailingIcon = {
             IconButton(onClick = { isVisible = !isVisible }) {
                 Icon(
-                    imageVector = if (isVisible)
+                    imageVector = if (isVisible) {
                         Icons.Default.VisibilityOff
-                    else
-                        Icons.Default.Visibility,
-                    contentDescription = if (isVisible)
-                        "Hide password" else "Show password"
+                    } else {
+                        Icons.Default.Visibility
+                    },
+                    contentDescription = if (isVisible) "Hide password" else "Show password"
                 )
             }
         },
@@ -274,8 +227,6 @@ private fun PasswordField(
         modifier = Modifier.fillMaxWidth()
     )
 }
-
-// MARK: — Error banner
 
 @Composable
 private fun ErrorBanner(
@@ -293,40 +244,29 @@ private fun ErrorBanner(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = "\u26A0️",
-            fontSize = 16.sp
-        )
+        Text(text = "\u26A0\uFE0F", fontSize = 16.sp)
         Text(
             text = message,
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFFFFB3B3),
             modifier = Modifier.weight(1f)
         )
-        IconButton(
-            onClick = onDismiss,
-            modifier = Modifier.size(24.dp)
-        ) {
+        IconButton(onClick = onDismiss, modifier = Modifier.size(24.dp)) {
             Text(text = "\u00D7", color = Color.Gray, fontSize = 18.sp)
         }
     }
 }
-
-// MARK: — Login button
 
 @Composable
 private fun LoginButton(
     isLoading: Boolean,
     canSubmit: Boolean,
     onClick: () -> Unit,
-    purple: Color,
-    purpleLight: Color
+    purple: Color
+    // purpleLight removed — was unused; Phase 2 gradient will re-introduce it
 ) {
     Button(
         onClick = onClick,
-        // FUSE: enabled reads directly from canSubmit — a computed
-        // property on AuthState. The button is automatically disabled
-        // when email/password are empty OR isLoading is true.
         enabled = canSubmit,
         shape = RoundedCornerShape(12.dp),
         colors = ButtonDefaults.buttonColors(
@@ -353,12 +293,6 @@ private fun LoginButton(
         }
     }
 }
-
-// MARK: — Previews
-
-// FUSE: Each preview passes a state snapshot directly to
-// AuthContent — the stateless composable. No ViewModel,
-// no Hilt, no coroutines needed in previews.
 
 @Preview(name = "Empty form", showBackground = true, backgroundColor = 0xFF07070D)
 @Composable

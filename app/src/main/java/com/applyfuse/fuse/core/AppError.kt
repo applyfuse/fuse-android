@@ -12,26 +12,21 @@ package com.applyfuse.fuse.core
 
 sealed class AppError : Exception() {
 
-    // FUSE: The network was unreachable when the request fired.
     object NetworkUnavailable : AppError()
 
-    // FUSE: The server returned 401 — token expired or invalid.
     object Unauthorized : AppError()
 
-    // FUSE: The server returned a 4xx client error.
     data class ClientError(val statusCode: Int) : AppError()
 
-    // FUSE: The server returned a 5xx server error.
     data class ServerError(val statusCode: Int) : AppError()
 
-    // FUSE: The response body could not be decoded.
     object DecodingFailed : AppError()
 
-    // FUSE: A timeout occurred waiting for the response.
     object Timeout : AppError()
 
-    // FUSE: Catch-all for errors that don't fit above.
-    data class Unknown(val message: String = "") : AppError()
+    // FUSE: override is required — Throwable.message already exists on the
+    // supertype. Without it Kotlin 2.x promotes the hiding warning to an error.
+    data class Unknown(override val message: String = "") : AppError()
 
     // FUSE: Human-readable message shown in the UI.
     // All wording lives here — never in the reducer or screen.
@@ -54,9 +49,7 @@ sealed class AppError : Exception() {
         }
 
     companion object {
-        // FUSE: Map any Throwable to a typed AppError at the
-        // repository boundary.
-        // Usage: } catch (e: Exception) { throw AppError.from(e) }
+        // FUSE: Map any Throwable to a typed AppError at the repository boundary.
         fun from(throwable: Throwable): AppError {
             if (throwable is AppError) return throwable
             return when {

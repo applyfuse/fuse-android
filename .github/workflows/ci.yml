@@ -1,5 +1,9 @@
 # GitHub Actions CI — Android
-# Uses gradle/actions/setup-gradle — no gradlew wrapper jar needed.
+# Gradle 8.9 / JDK 17 — matches local wrapper (gradle/wrapper/gradle-wrapper.properties)
+#
+# The wrapper JAR is generated in each job via `gradle wrapper --gradle-version=8.9`
+# before ./gradlew is invoked. Once gradle-wrapper.jar is committed to the repo
+# (one-time local step — see README) this bootstrap step becomes a no-op.
 
 name: Android CI
 
@@ -15,7 +19,7 @@ concurrency:
 
 jobs:
 
-  # ── Job 1: Unit tests ───────────────────────────────────
+  # ── Job 1: Unit tests ──────────────────────────────────────────────────────
   test:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -30,16 +34,23 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      # gradle/actions/setup-gradle handles the wrapper download
-      # automatically — no need for a wrapper jar in the repo.
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
           cache-read-only: false
 
+      # Bootstrap: generate wrapper JAR if not yet committed to the repo.
+      # Once gradle-wrapper.jar is committed this step is effectively a no-op.
+      - name: Bootstrap wrapper JAR
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version=8.9
+          fi
+          chmod +x gradlew
+
       - name: Run unit tests
-        run: gradle test --stacktrace
+        run: ./gradlew test --stacktrace
 
       - name: Upload test reports
         if: always()
@@ -49,7 +60,7 @@ jobs:
           path: app/build/reports/tests/
           retention-days: 7
 
-  # ── Job 2: Detekt ─────────────────────────────────────
+  # ── Job 2: Detekt ──────────────────────────────────────────────────────────
   lint:
     name: Detekt
     runs-on: ubuntu-latest
@@ -64,13 +75,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      - name: Bootstrap wrapper JAR
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version=8.9
+          fi
+          chmod +x gradlew
+
       - name: Run Detekt
-        run: gradle detekt
+        run: ./gradlew detekt
 
       - name: Upload Detekt report
         if: always()
@@ -80,7 +98,7 @@ jobs:
           path: app/build/reports/detekt/
           retention-days: 7
 
-  # ── Job 3: Build APK (only after tests pass) ─────────────
+  # ── Job 3: Build APK (only after tests pass) ───────────────────────────────
   build:
     name: Build Debug APK
     runs-on: ubuntu-latest
@@ -96,13 +114,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Setup Gradle
+      - name: Setup Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      - name: Bootstrap wrapper JAR
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            gradle wrapper --gradle-version=8.9
+          fi
+          chmod +x gradlew
+
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: ./gradlew assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

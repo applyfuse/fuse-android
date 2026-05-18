@@ -88,6 +88,9 @@ dependencies {
     testImplementation(libs.junit5.api)
     testImplementation(libs.junit5.params)
     testRuntimeOnly(libs.junit5.engine)
+    // junit-platform-launcher is required so the JUnit Platform can discover
+    // and start the test runner. Without it, gradle test silently runs 0 tests.
+    testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.mockk)
     testImplementation(libs.truth)
@@ -99,4 +102,6 @@ dependencies {
 detekt {
     config.setFrom(files("$rootDir/detekt.yml"))
     buildUponDefaultConfig = true
+    // Treat detekt warnings as errors in CI — surface violations immediately
+    basePath = projectDir.absolutePath
 }

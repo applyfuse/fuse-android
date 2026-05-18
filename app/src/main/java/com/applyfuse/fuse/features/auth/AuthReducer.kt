@@ -1,7 +1,5 @@
 package com.applyfuse.fuse.features.auth
 
-import com.applyfuse.fuse.core.AppError
-
 // FUSE: The reducer is the most important file in any feature.
 // It is a pure function — given the same state and action,
 // it always returns the same result. No network calls,
@@ -16,7 +14,6 @@ import com.applyfuse.fuse.core.AppError
 // before launching any effects in handleEffect().
 
 fun authReducer(state: AuthState, action: AuthAction): AuthState = when (action) {
-
     // FUSE: Update email on every keystroke.
     // Clear errorMessage so the error banner dismisses as
     // soon as the user starts correcting their input.

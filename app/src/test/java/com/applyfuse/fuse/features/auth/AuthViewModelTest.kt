@@ -11,6 +11,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.jupiter.api.AfterEach
@@ -61,15 +62,10 @@ private class TestAuthViewModel(
 @DisplayName("AuthViewModel integration")
 class AuthViewModelTest {
 
-    // FUSE: UnconfinedTestDispatcher runs coroutines eagerly—
-    // no need for advanceUntilIdle() in most cases, but we
-    // keep it for clarity.
     private val testDispatcher = UnconfinedTestDispatcher()
 
     @BeforeEach
     fun setUp() {
-        // FUSE: Replace Dispatchers.Main so viewModelScope.launch
-        // doesn't throw in JVM unit tests.
         Dispatchers.setMain(testDispatcher)
     }
 
@@ -77,8 +73,6 @@ class AuthViewModelTest {
     fun tearDown() {
         Dispatchers.resetMain()
     }
-
-    // MARK: — Initial state
 
     @Test
     fun `initial state is empty`() {
@@ -88,8 +82,6 @@ class AuthViewModelTest {
         assertFalse(vm.state.value.isLoading)
         assertNull(vm.state.value.errorMessage)
     }
-
-    // MARK: — Form input
 
     @Nested
     @DisplayName("Form input")
@@ -119,8 +111,6 @@ class AuthViewModelTest {
         }
     }
 
-    // MARK: — Login success flow
-
     @Nested
     @DisplayName("Login success flow")
     inner class LoginSuccessTests {
@@ -129,10 +119,6 @@ class AuthViewModelTest {
         fun `loginTapped sets isLoading immediately`() {
             val vm = makeVM()
             vm.send(AuthAction.LoginTapped)
-            // Reducer runs synchronously — isLoading is true before effect runs
-            // UnconfinedTestDispatcher runs effect eagerly so check loading
-            // by observing the synchronous reducer step:
-            // We verify by checking that user is eventually set
             assertTrue(vm.state.value.isLoggedIn)
         }
 
@@ -157,15 +143,17 @@ class AuthViewModelTest {
         fun `loginTapped success emits NavigateToHome event`() = runTest {
             val vm = makeVM()
             val events = mutableListOf<FuseEvent>()
+            // FUSE: launch the collector first, then runCurrent() to ensure
+            // the coroutine is registered on the dispatcher before send() fires
+            // the no-replay SharedFlow. Without runCurrent() the event is lost.
             val job = launch { vm.events.collect { events.add(it) } }
+            runCurrent()
             vm.send(AuthAction.LoginTapped)
             advanceUntilIdle()
             assertTrue(events.any { it is AuthEvent.NavigateToHome })
             job.cancel()
         }
     }
-
-    // MARK: — Login failure flow
 
     @Nested
     @DisplayName("Login failure flow")
@@ -193,7 +181,10 @@ class AuthViewModelTest {
         fun `loginTapped failure emits ShowToast event`() = runTest {
             val vm = makeVM(shouldSucceed = false)
             val events = mutableListOf<FuseEvent>()
+            // FUSE: runCurrent() ensures the collector coroutine is active
+            // before send() — no-replay SharedFlow drops events with no listeners.
             val job = launch { vm.events.collect { events.add(it) } }
+            runCurrent()
             vm.send(AuthAction.LoginTapped)
             advanceUntilIdle()
             assertTrue(events.any { it is AuthEvent.ShowToast })
@@ -218,8 +209,6 @@ class AuthViewModelTest {
         }
     }
 
-    // MARK: — Error dismissal
-
     @Nested
     @DisplayName("Error dismissal")
     inner class ErrorDismissalTests {
@@ -235,8 +224,6 @@ class AuthViewModelTest {
             assertEquals("a@b.com", vm.state.value.email)
         }
     }
-
-    // MARK: — Logout flow
 
     @Nested
     @DisplayName("Logout flow")
@@ -259,15 +246,16 @@ class AuthViewModelTest {
             vm.send(AuthAction.LoginTapped)
             advanceUntilIdle()
             val events = mutableListOf<FuseEvent>()
+            // FUSE: runCurrent() ensures the collector is active before
+            // LogoutTapped fires the no-replay NavigateToLogin event.
             val job = launch { vm.events.collect { events.add(it) } }
+            runCurrent()
             vm.send(AuthAction.LogoutTapped)
             advanceUntilIdle()
             assertTrue(events.any { it is AuthEvent.NavigateToLogin })
             job.cancel()
         }
     }
-
-    // MARK: — Repository call tracking
 
     @Nested
     @DisplayName("Repository tracking")
@@ -297,8 +285,6 @@ class AuthViewModelTest {
             assertEquals("specific@test.com", fake.lastLoginEmail)
         }
     }
-
-    // MARK: — Helpers
 
     private fun makeVM(shouldSucceed: Boolean = true): TestAuthViewModel {
         val fake = FakeAuthRepository(shouldSucceed = shouldSucceed)

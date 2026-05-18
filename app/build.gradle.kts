@@ -84,6 +84,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.kotlinx.serialization.json)
 
+    // Security — EncryptedSharedPreferences for LiveTokenStore
+    implementation(libs.security.crypto)
+
     // Hilt
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)

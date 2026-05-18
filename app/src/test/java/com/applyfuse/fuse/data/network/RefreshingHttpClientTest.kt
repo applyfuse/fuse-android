@@ -4,6 +4,7 @@ import com.applyfuse.fuse.core.AppError
 import com.applyfuse.fuse.data.token.InMemoryTokenStore
 import com.applyfuse.fuse.domain.model.AuthTokens
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.runCurrent
@@ -58,7 +59,10 @@ class RefreshingHttpClientTest {
             val client = RefreshingHttpClient(
                 delegate = fake,
                 tokenStore = InMemoryTokenStore(),
-                refresh = { refreshCount++; AuthTokens.mock }
+                refresh = {
+                    refreshCount++
+                    AuthTokens.mock
+                }
             )
 
             val result = client.get("/x") { it }
@@ -122,7 +126,10 @@ class RefreshingHttpClientTest {
             val client = RefreshingHttpClient(
                 delegate = fake,
                 tokenStore = InMemoryTokenStore(),
-                refresh = { refreshCount++; AuthTokens.mock }
+                refresh = {
+                    refreshCount++
+                    AuthTokens.mock
+                }
             )
 
             var thrown: Throwable? = null
@@ -166,6 +173,12 @@ class RefreshingHttpClientTest {
     @DisplayName("Single-flight")
     inner class SingleFlightTests {
 
+        // FUSE: runCurrent() is ExperimentalCoroutinesApi. It is the
+        // correct deterministic primitive here — advance every
+        // coroutine to its next suspension point with no virtual
+        // time, so we can assert "exactly one refresh has begun"
+        // while the leader is parked. Opt-in is scoped to this test.
+        @OptIn(ExperimentalCoroutinesApi::class)
         @Test
         fun `concurrent Unauthorized funnels into exactly one refresh`() = runTest {
             val gate = CompletableDeferred<Unit>()

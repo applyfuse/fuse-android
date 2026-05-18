@@ -1,8 +1,25 @@
 # FUSE Data Layer — Android
 
-> **DRAFT — finalise as Phase 2 components land (scope row 11).**
-> This is the Android mirror of fuse-ios's DATA_LAYER.md. The shape
-> is intentionally identical; the idioms are Kotlin/OkHttp/Hilt.
+> **This is the Android implementation-specific data-layer doc.** It
+> documents how `fuse-android` concretely wires the data layer: the
+> Hilt module composition, the `Mutex` + shared `Deferred`
+> single-flight refresh, the EncryptedSharedPreferences token store.
+>
+> The **cross-platform conceptual contract** — the `HttpClient`
+> interface shape, the error model, JSON conventions, and the locked
+> cross-platform decisions — lives in the single source of truth:
+> **https://github.com/applyfuse/fuse-docs/blob/main/DATA_LAYER.md**
+>
+> This file is **not** a copy of that one and **not** a stub: it is
+> the real, Android-specific wiring, which legitimately differs from
+> iOS's. If you change the *contract* (interface signatures, the
+> error model, a locked decision), change it in `fuse-docs` — not
+> here. If you change how *Android wires it*, change it here.
+>
+> **DRAFT — finalise as Phase 2 components land (PHASE_2.md scope
+> row 11).** The wiring below is the intended Android realisation of
+> the conceptual contract; confirm against the code as each
+> component is implemented.
 
 ## The shape
 
@@ -93,6 +110,11 @@ Page-based. `GET /feed?page=N` → `{ items, page, has_more }`.
 `page` 1-indexed. `has_more` server-authoritative. `page` sent as a
 query param. **No Paging 3** — the reducer owns pagination state
 explicitly (FUSE rule: no libraries, clear mental model).
+
+> The cross-platform pagination *contract* (page-based,
+> server-authoritative `has_more`, 1-indexed) is recorded in the
+> canonical `fuse-docs/DATA_LAYER.md`. The above is the intended
+> Android realisation of it.
 
 ## Testing the data layer
 

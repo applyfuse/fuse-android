@@ -85,7 +85,6 @@ private fun AuthContent(
     onAction: (AuthAction) -> Unit
 ) {
     val purple = Color(0xFF5D52CC)
-    val purpleLight = Color(0xFF7B6EF6)
 
     Box(
         modifier = Modifier
@@ -142,8 +141,7 @@ private fun AuthContent(
                 isLoading = state.isLoading,
                 canSubmit = state.canSubmit,
                 onClick = { onAction(AuthAction.LoginTapped) },
-                purple = purple,
-                purpleLight = purpleLight
+                purple = purple
             )
         }
     }
@@ -264,8 +262,8 @@ private fun LoginButton(
     isLoading: Boolean,
     canSubmit: Boolean,
     onClick: () -> Unit,
-    purple: Color,
-    purpleLight: Color
+    purple: Color
+    // purpleLight removed — was unused; Phase 2 gradient will re-introduce it
 ) {
     Button(
         onClick = onClick,

@@ -7,14 +7,7 @@ import kotlinx.coroutines.Dispatchers
 // be injected and replaced in tests.
 //
 // In production: real Dispatchers.Main / IO / Default
-// In tests:      TestCoroutineDispatcher or UnconfinedTestDispatcher
-//
-// Inject AppDispatchers via Hilt into any class that needs
-// to switch dispatchers explicitly.
-//
-// Most feature ViewModels don't need this directly — viewModelScope
-// already uses Dispatchers.Main.immediate. Use AppDispatchers when
-// you need explicit dispatch control in a repository or use case.
+// In tests:      UnconfinedTestDispatcher via Dispatchers.setMain()
 
 data class AppDispatchers(
     // FUSE: Use for UI updates and state emissions.
@@ -28,9 +21,6 @@ data class AppDispatchers(
 )
 
 // FUSE: Convenience singleton for production use.
+// Cannot extend a data class — use a val with default constructor instead.
 // Inject this via Hilt rather than using Dispatchers directly.
-object ProductionDispatchers : AppDispatchers(
-    main = Dispatchers.Main.immediate,
-    io = Dispatchers.IO,
-    default = Dispatchers.Default
-)
+val ProductionDispatchers = AppDispatchers()

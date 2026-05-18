@@ -13,6 +13,7 @@ mockk                = "1.13.13"
 truth                = "1.4.4"
 okhttp               = "4.12.0"
 serialization        = "1.7.3"
+security-crypto      = "1.1.0-alpha06"
 
 [libraries]
 # Compose
@@ -36,6 +37,9 @@ kotlinx-coroutines-test         = { group = "org.jetbrains.kotlinx",   name = "k
 # Networking
 okhttp                          = { group = "com.squareup.okhttp3",    name = "okhttp",                         version.ref = "okhttp" }
 kotlinx-serialization-json      = { group = "org.jetbrains.kotlinx",   name = "kotlinx-serialization-json",     version.ref = "serialization" }
+
+# Security
+security-crypto                 = { group = "androidx.security",       name = "security-crypto",                version.ref = "security-crypto" }
 
 # Hilt
 hilt-android                    = { group = "com.google.dagger",       name = "hilt-android",                   version.ref = "hilt" }

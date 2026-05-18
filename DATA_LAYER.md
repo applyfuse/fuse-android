@@ -197,3 +197,51 @@ Flagged explicitly so this does not become a silent cross-platform
 divergence. Pending that decision, Android implements the split
 (option 1's intent) because reverting it would ship a worse UX and
 strand the existing `Timeout` case.
+
+### 2026-05-18 — Row 3: security-crypto 1.1.0-alpha06 (NOT 1.0.0 "stable")
+
+**Decision.** `LiveTokenStore` uses
+`androidx.security:security-crypto:1.1.0-alpha06`.
+
+**Rationale / minor flagged deviation.** security-crypto's only
+release on a "stable" track is 1.0.0, which has well-known
+AndroidKeyStore reliability problems (key invalidation / decrypt
+failures on certain API levels and after some device state changes).
+1.1.0-alpha06 is the de-facto production-standard for
+EncryptedSharedPreferences — years stable in wide use despite the
+`alpha` label. Choosing it over the nominally-stable-but-buggy 1.0.0
+is deliberate: FUSE wants the reliable path, and shipping a token
+store on a version with known keystore bugs would be the worse call.
+Not a cross-platform contract deviation (the contract names
+EncryptedSharedPreferences, not a version); recorded here because
+"use an alpha dependency" is itself a decision a future reader
+deserves to see justified.
+
+### 2026-05-18 — Row 3: LiveTokenStore tested via probe-and-skip — COVERAGE CAVEAT
+
+**Decision.** `LiveTokenStoreTest` uses the probe-and-skip strategy
+this doc's "Testing the data layer" section already prescribes
+(user-confirmed): `@BeforeEach` attempts real construction and
+forces the lazy `EncryptedSharedPreferences` to initialise; if the
+Android Keystore is unavailable, JUnit5 `assumeTrue` SKIPS the tests
+(the Android analogue of iOS `XCTSkip`).
+
+**Caveat — stated so it is NOT a silent gap.** In `ci-local.sh`'s
+plain-JVM run there is no Android runtime, so `LiveTokenStoreTest`
+**always skips** — meaning **LiveTokenStore's real AES-256
+encryption round-trip is NOT exercised by the JVM CI gate.**
+`InMemoryTokenStore` is fully tested (pure JVM); `LiveTokenStore`'s
+encryption path is only exercised on an instrumented/emulator run,
+which the current CI does not perform.
+
+This is contract-consistent and was explicitly chosen over the
+alternatives (Robolectric — rejected as a heavy new test dependency
+against FUSE's "no libraries" ethos; or not testing LiveTokenStore
+at all). But it is logged loudly here, in the file's own decision
+log, precisely because "a security-critical class whose core path
+has no executing assertion in CI" is the exact failure class this
+project spent its Phase 1 remediation eliminating. Recommended
+follow-up for whoever owns CI: add an instrumented-test job
+(emulator) so the encryption round-trip is actually verified
+somewhere, even if not in `ci-local.sh`. Until then, this gap is
+known and accepted, not hidden.

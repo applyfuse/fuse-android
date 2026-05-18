@@ -1,39 +1,38 @@
 # Detekt 1.23.x configuration
 # Only valid rule-set keys are allowed at the top level.
-# The detekt:/config: block and top-level excludes: list from
-# the original file were invalid schema and caused detekt to
-# reject the config entirely — moved to the Gradle detekt {}
-# extension in app/build.gradle.kts (buildUponDefaultConfig = true
-# handles test-source exclusion automatically).
+# The original detekt:/config: block and top-level excludes: list were
+# invalid schema — removed. buildUponDefaultConfig = true in
+# app/build.gradle.kts handles test-source exclusion automatically.
 
 complexity:
   LongMethod:
     threshold: 60
     # AuthContent is a single-responsibility Composable layout function.
-    # Compose idiom requires one function to compose the full screen tree —
-    # splitting purely to satisfy line count would harm readability.
+    # Compose idiom requires composing the full screen tree in one function —
+    # splitting purely for line count harms readability.
   LongParameterList:
     functionThreshold: 6
+
+naming:
+  FunctionNaming:
+    # Jetpack Compose requires @Composable functions to use PascalCase.
+    # Standard exemption — developer.android.com/jetpack/compose/designsystems/naming
+    ignoreAnnotated:
+      - 'Composable'
 
 style:
   MaxLineLength:
     maxLineLength: 140
   WildcardImport:
     active: true
-  FunctionNaming:
-    # Jetpack Compose requires @Composable functions to use PascalCase.
-    # This is the standard exemption documented at
-    # https://developer.android.com/jetpack/compose/designsystems/naming
-    ignoreAnnotated:
-      - 'Composable'
 
 exceptions:
   TooGenericExceptionCaught:
     active: false
     # FUSE pattern: all exceptions funnel through AppError.from(e) at the
-    # ViewModel boundary. Generic catch is intentional — it maps unknown
-    # throwables to AppError.Unknown rather than crashing the app.
+    # ViewModel boundary. Generic catch is intentional — maps unknown
+    # throwables to AppError.Unknown rather than crashing.
   SwallowedException:
     active: false
-    # Same rationale as TooGenericExceptionCaught: exceptions are re-thrown
-    # as typed AppError via AppError.from(e), not silently discarded.
+    # Logout failures are non-critical — state is cleared regardless.
+    # Exception is acknowledged, not silently discarded.

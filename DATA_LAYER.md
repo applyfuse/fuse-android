@@ -109,11 +109,11 @@ Both repositories share one `RefreshingHttpClient` → feed gets
 > `@Named("bare")` LiveHttpClient, TokenStore=LiveTokenStore, and
 > the bound HttpClient=RefreshingHttpClient with the refresh
 > lambda). Steps 4–5: `LiveAuthRepository` is bound via the
-> existing `RepositoryModule`; `LiveFeedRepository` is added at
-> PHASE_2 row 10 and will inject the SAME bound HttpClient (the
-> singleton RefreshingHttpClient) — sharing is automatic via
-> `@Singleton`. See the "Rows 4+10 Hilt wiring unified" decision-
-> log entry for why this landed with row 4 rather than row 10.
+> existing `RepositoryModule`; `LiveFeedRepository` is bound there
+> too (row 9) and injects the SAME bound HttpClient (the singleton
+> RefreshingHttpClient) — sharing is automatic via `@Singleton`.
+> See the "Rows 4+10 Hilt wiring unified" and "Row 9" decision-log
+> entries.
 
 ## Pagination (Feed)
 
@@ -486,11 +486,10 @@ contract (page 1-indexed, `hasMore` server-authoritative, no
 **"+ wire types" deferred to row 10, not dropped.** `PHASE_2.md`
 row 6 reads "Feed: `FeedItem`, `FeedPage` domain **+ wire types**".
 The `@Serializable` `FeedItemWire` / `FeedPageWire` are NOT in
-row 6; they land with `LiveFeedRepository` in row 10, exactly where
-the auth wire types live relative to `LiveAuthRepository` (in the
-repository file, not `domain/model/`). This is the row-4 pattern
-applied consistently. Flagged here so the deferral is a recorded
-decision, not a silently missed clause of the scope row.
+row 6; they land with `LiveFeedRepository` (row 9, Option 1's
+collapse of rows 9+10), in the repository file — exactly where the
+auth wire types live relative to `LiveAuthRepository`. The row-4
+pattern applied consistently; promise kept (see Row 9 entry).
 
 **No standalone model tests for row 6.** `User` and `AuthTokens`
 (equivalently trivial domain data classes) have ZERO standalone
@@ -498,7 +497,7 @@ test files in this repo; their behaviour is exercised via the
 reducer/repository tests that consume them. `FeedItem`/`FeedPage`
 follow that established precedent — their value semantics get
 exercised by the feed reducer tests (row 7, ~40 tests) and the
-`LiveFeedRepository` tests (row 10). Adding bespoke model tests here
+`LiveFeedRepository` tests (row 9). Adding bespoke model tests here
 would itself be an inconsistency. Recorded so the absence of a
 `FeedItemTest`/`FeedPageTest` is a decision, not an oversight.
 
@@ -663,3 +662,93 @@ Completes PHASE_2 row 8: FeedRepository+Fake 9134d05, FeedViewModel
 42923c4, FeedViewModelTest (16 tests) 738c9f3, this. NOT validated
 until `ci-local.sh` is green on `phase-2` — same per-row discipline
 as every prior row.
+
+### 2026-05-19 — Row 9: Option 1 — rows 9+10 collapsed (LiveFeedRepository + binding + UI as one canonical unit)
+
+**Decision (user-confirmed, Option 1).** Row 9 (`FeedScreen` UI)
+and row 10 (`LiveFeedRepository` + Hilt `@Binds` + repo tests) are
+built as ONE cohesive set. PHASE_2.md's row 10 is now empty
+(folded into row 9).
+
+**Why this is the canonical choice, grounded in
+`fuse-docs/ARCHITECTURE.md` (NOT iOS-analogy).** This was decided
+after the user asked to verify the approach against the SINGLE
+SOURCE OF TRUTH. `fuse-docs/ARCHITECTURE.md` §5 "How to add a new
+feature" is an explicitly ordered checklist: **step 5 Create
+Repository + "Wire Hilt binding (Android)"**, step 6 ViewModel,
+step 7 ViewModel tests, **step 8 Build the UI (last)**. The
+PHASE_2.md row split (row 9 = UI, row 10 = repository binding)
+*inverts* that canonical order — it would build step 8 before
+step 5's binding. The same Hilt-whole-graph reality that forced the
+rows-4+10 unification applies again: `FeedScreen`'s
+`hiltViewModel()` needs `FeedViewModel @HiltViewModel` needs a
+`FeedRepository` binding. Doing LiveFeedRepository → `@Binds` →
+`@HiltViewModel` → UI as one ordered unit is therefore the
+*contract-faithful* sequence, not a deviation. Option 2 (UI seam
+now, binding in row 10) was viable and not against the contract,
+but it would carry a temporary `FeedScreen` signature asymmetry vs
+`AuthScreen` for one row; Option 1 has zero such wrinkle and
+matches §5's ordering exactly.
+
+**Authority correction (process note, mine).** Earlier rows
+justified mirroring decisions as "mirror fuse-ios". Per
+`ARCHITECTURE.md`'s "single source of truth" header and §3, the
+cross-platform CONTRACT is `fuse-docs`, and `fuse-ios` is one
+platform's *realisation* of it — a useful proxy, not the authority.
+This entry and the row-9 commits reason from `fuse-docs` directly
+(§5 ordering, §3 DI mapping, §7 Pattern 5 shared interceptor, §8
+repository-test focus, §9 state snapshots). Prior "mirror iOS"
+entries remain accurate as proxy reasoning; future entries cite
+`fuse-docs` as the authority. Surfaced, not buried.
+
+**FeedViewModel's two deviations from `fuse-docs` §3/§5/§6 — status.**
+(1) *Standalone, not `BaseViewModel`* — remains, justified by the
+effect-firing guard, under §1's explicit "pick the reducer/Store
+shape per feature and note it" licence (iOS's Feed is likewise a
+standalone, and §4 notes Feed uses the pure-functional reducer
+variant — the contract expressly anticipates per-feature Store/
+reducer variation). (2) *`@HiltViewModel` deferred (row 8)* — NOW
+CLOSED by row 9: `@HiltViewModel @Inject` added after the `@Binds`
+landed, so `FeedViewModel` is back on §3's DI mapping. Net: one
+remaining, justified, contract-sanctioned deviation; the
+sequencing deviation is resolved.
+
+**What landed (6 commits).** (1) `LiveFeedRepository` + internal
+`@Serializable` `FeedItemWire`/`FeedPageWire` DTOs with `toDomain()`
+mappers, added to `FeedRepository.kt` (mirror of `AuthRepository.kt`
+structure; the `@SerialName("has_more")` seam is explicit, no global
+naming strategy). These DTOs are the "+ wire types" clause the
+row-6 entry promised would land with `LiveFeedRepository` — promise
+kept. (2) `RepositoryModule.bindFeedRepository` `@Binds @Singleton`
+(same shape as `bindAuthRepository`); `LiveFeedRepository` injects
+`HttpClient` → Hilt resolves the SAME `@Singleton`
+`RefreshingHttpClient` → feed inherits 401-refresh free
+(`fuse-docs` §7 Pattern 5; FUSE rule 6). (3) `@HiltViewModel
+@Inject` on `FeedViewModel` (closes the row-8 deferral; safe now
+the binding exists). (4) `FeedScreen` Compose UI — mirror of iOS
+`FeedView`'s four content shapes + in-repo `AuthScreen` conventions;
+`hiltViewModel()` default so the signature matches `AuthScreen`
+exactly; raw `AppError?` → `userMessage` derived at the edge (the
+row-7 promise kept); `@Preview` per state from `FeedState` company
+fixtures. (5) `FeedRepositoryTest` (~14, `FakeHttpClient`, no
+mocks; `fuse-docs` §8). (6) `MainActivity` start-destination wiring
++ this entry.
+
+**MainActivity wiring scope (flagged).** `setContent {}` was empty
+("Navigation host will go here in Phase 2"); `AuthScreen` is also
+not yet wired. Row 9 wires `FeedScreen()` as the single start
+destination inside `MaterialTheme`/`Surface` — the minimal correct
+§5-step-8 "build the UI" wiring. A real `NavHost` (Auth → Feed) and
+any custom `FuseTheme` are NOT introduced here (no nav-graph or
+theme infrastructure exists in the repo yet, and inventing it would
+exceed row 9's scope and the FUSE "no unnecessary infrastructure"
+ethos). Recorded so a future reader sees the single-screen host is
+a deliberate minimal choice pending the Profile feature (Phase 3),
+not an oversight or a missing-NavHost defect.
+
+Completes PHASE_2 rows 9 (+10, collapsed): LiveFeedRepository+DTOs
+cbe18ca, bindFeedRepository b711cb9, FeedViewModel @HiltViewModel
+5a1610f, FeedScreen 1aea76b, FeedRepositoryTest f7e356f, nav+this.
+PHASE_2.md row 10 is now empty (folded here). NOT validated until
+`ci-local.sh` is green on `phase-2` — same per-row discipline as
+every prior row.

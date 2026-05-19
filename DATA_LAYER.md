@@ -104,6 +104,17 @@ order:
 Both repositories share one `RefreshingHttpClient` → feed gets
 401-refresh for free.
 
+> **Realised (2026-05-19):** this wiring is implemented in
+> `di/NetworkModule.kt` (provides Json, OkHttpClient,
+> `@Named("bare")` LiveHttpClient, TokenStore=LiveTokenStore, and
+> the bound HttpClient=RefreshingHttpClient with the refresh
+> lambda). Steps 4–5: `LiveAuthRepository` is bound via the
+> existing `RepositoryModule`; `LiveFeedRepository` is added at
+> PHASE_2 row 10 and will inject the SAME bound HttpClient (the
+> singleton RefreshingHttpClient) — sharing is automatic via
+> `@Singleton`. See the "Rows 4+10 Hilt wiring unified" decision-
+> log entry for why this landed with row 4 rather than row 10.
+
 ## Pagination (Feed)
 
 Page-based. `GET /feed?page=N` → `{ items, page, has_more }`.
@@ -391,3 +402,60 @@ Completes PHASE_2 row 4: AuthTokens 2d897ec, LiveTokenStore
 a76d602, LiveAuthRepository 5889a70, tests e3afdc2, this. NOT
 validated until `ci-local.sh` is green on `phase-2` for this whole
 set — same per-row discipline as rows 1–3 and 5.
+
+### 2026-05-19 — Rows 4+10 Hilt wiring UNIFIED (latent scope-table flaw)
+
+**What happened.** Giving `LiveAuthRepository` real
+`(HttpClient, TokenStore)` constructor deps (row 4) made
+`ci-local.sh` fail with `[Dagger/MissingBinding]`: Hilt validates
+the **entire** dependency graph at compile time, and the existing
+Phase-1 `RepositoryModule.bindAuthRepository` binds
+`AuthRepository → LiveAuthRepository`, so the moment that class
+needed `HttpClient`/`TokenStore` the whole app stopped compiling
+until those were bound. Binding them is PHASE_2.md **row 10**.
+
+**Conclusion — this is a latent flaw in the scope table, not just
+execution.** PHASE_2.md lists row 4 (`LiveAuthRepository` wired) and
+row 10 (Hilt `RepositoryModule` wiring) as independently shippable
+rows. Hilt's whole-graph compile-time validation makes that
+impossible: a repository with real deps cannot compile without its
+bindings, in ANY build order. Rows 4 and 10's Hilt portion are one
+atomic unit. (The earlier row-4/5 build-order inversion is unrelated
+and a red herring here — row 4 hits this wall regardless of order.)
+
+**Decision (user-confirmed).** Pull row 10's Hilt wiring forward
+into `di/NetworkModule.kt`, landing WITH row 4. It is not premature
+— the graph genuinely cannot compile without it, and a stopgap /
+throwing binding (the considered alternative) was rejected as
+exactly the "compiles green but broken at runtime" pattern this
+project's whole discipline exists to eliminate. Row 10 is reduced
+to: add `LiveFeedRepository` injecting the SAME bound `HttpClient`
+(the `@Singleton` `RefreshingHttpClient`) — sharing is automatic.
+
+**Process note (mine).** When scoping row 4 I chose to "defer Hilt
+wiring to row 10" without recognising Hilt's whole-graph validation
+makes that deferral impossible the moment the constructor changes.
+A latent planning error, same category as the build-order
+inversion. The gate caught it (the discipline working). Recorded,
+not glossed.
+
+**Decision — base URL.** `LiveHttpClient`'s `baseUrl` is provided
+in `NetworkModule` as a private `const BASE_URL =
+"https://api.applyfuse.com"`. A named const, NOT a
+`BuildConfig`/flavor field: no gradle change, trivially swapped,
+fits FUSE "clear mental model". Promote to a `BuildConfig` or
+product-flavor field when a real staging-vs-prod split is needed —
+recorded so the absence of build-config plumbing is a decision, not
+an oversight.
+
+**Refresh lambda.** Implemented in `NetworkModule.provideHttpClient`
+using the BARE client (recursion safety): read current tokens
+(none ⇒ propagate `Unauthorized` ⇒ user signed out), `POST
+/auth/refresh` with `RefreshTokenRequest`, decode `RefreshResponse`,
+persist + return rotated `AuthTokens` via the shared store. Uses the
+wire types defined in row 4. The single shared `@Singleton`
+`RefreshingHttpClient` is what every repository injects, so
+401-refresh-retry is automatic across auth and (at row 10) feed.
+
+NOT validated until `ci-local.sh` is green on `phase-2` for the
+combined row-4 + NetworkModule set.

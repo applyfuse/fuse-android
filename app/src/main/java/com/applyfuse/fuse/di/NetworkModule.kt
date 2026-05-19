@@ -13,10 +13,10 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import javax.inject.Named
-import javax.inject.Singleton
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
+import javax.inject.Named
+import javax.inject.Singleton
 
 // FUSE: NetworkModule wires the entire data-layer transport graph.
 //

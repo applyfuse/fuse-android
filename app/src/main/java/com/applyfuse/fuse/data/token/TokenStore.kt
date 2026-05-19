@@ -58,6 +58,13 @@ class InMemoryTokenStore : TokenStore {
 // so construction is cheap and the Keystore work is deferred to
 // first use (this is also what makes the probe-and-skip test
 // strategy work; see LiveTokenStoreTest).
+//
+// FUSE: the on-disk representation is deliberately decoupled from
+// the AuthTokens domain model (mirror of iOS's StoredAuthTokens).
+// access/refresh are required keys; expires_at is a SEPARATE
+// nullable key — absent when expiresAt is null, so a token pair
+// with no known expiry round-trips correctly. A session is valid
+// iff BOTH access and refresh exist; expiresAt never gates validity.
 @Singleton
 class LiveTokenStore @Inject constructor(
     @ApplicationContext private val context: Context
@@ -80,19 +87,31 @@ class LiveTokenStore @Inject constructor(
         val access = prefs.getString(KEY_ACCESS, null)
         val refresh = prefs.getString(KEY_REFRESH, null)
         // FUSE: a session is valid only if BOTH tokens are present;
-        // a half-written pair is treated as no session.
+        // a half-written pair is treated as no session. expiresAt is
+        // read back only when present (-1 sentinel == "not stored").
         if (access != null && refresh != null) {
-            AuthTokens(access, refresh)
+            val storedExpiry = prefs.getLong(KEY_EXPIRES_AT, NO_EXPIRY)
+            val expiresAt = if (storedExpiry == NO_EXPIRY) null else storedExpiry
+            AuthTokens(access, refresh, expiresAt)
         } else {
             null
         }
     }
 
     override suspend fun write(tokens: AuthTokens) = withContext(Dispatchers.IO) {
-        prefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_ACCESS, tokens.accessToken)
             .putString(KEY_REFRESH, tokens.refreshToken)
-            .apply()
+        val expiry = tokens.expiresAt
+        if (expiry == null) {
+            // FUSE: explicitly remove a stale expiry so an
+            // overwrite with a null-expiry pair does not inherit a
+            // previous token's expiresAt.
+            editor.remove(KEY_EXPIRES_AT)
+        } else {
+            editor.putLong(KEY_EXPIRES_AT, expiry)
+        }
+        editor.apply()
     }
 
     override suspend fun clear() = withContext(Dispatchers.IO) {
@@ -103,5 +122,11 @@ class LiveTokenStore @Inject constructor(
         const val PREFS_FILE_NAME = "fuse_secure_tokens"
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
+        const val KEY_EXPIRES_AT = "expires_at"
+
+        // FUSE: SharedPreferences has no nullable getLong; -1 is the
+        // "no expiry stored" sentinel. Epoch-millis expiries are
+        // always >= 0, so -1 can never collide with a real value.
+        const val NO_EXPIRY = -1L
     }
 }

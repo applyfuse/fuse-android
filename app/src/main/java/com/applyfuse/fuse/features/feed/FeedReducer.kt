@@ -1,5 +1,7 @@
 package com.applyfuse.fuse.features.feed
 
+import com.applyfuse.fuse.domain.model.FeedPage
+
 // FUSE: feedReducer is the pure-function heart of the feed feature
 // (FUSE rule 1). Mirror of fuse-ios
 // Sources/Features/Feed/FeedReducer.swift. Same signature shape as

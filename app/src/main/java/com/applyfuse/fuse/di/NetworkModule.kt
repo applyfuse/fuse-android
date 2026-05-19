@@ -1,10 +1,11 @@
 package com.applyfuse.fuse.di
 
+import com.applyfuse.fuse.core.AppError
 import com.applyfuse.fuse.data.network.HttpClient
 import com.applyfuse.fuse.data.network.LiveHttpClient
 import com.applyfuse.fuse.data.network.RefreshingHttpClient
-import com.applyfuse.fuse.data.repository.RefreshTokenRequest
 import com.applyfuse.fuse.data.repository.RefreshResponse
+import com.applyfuse.fuse.data.repository.RefreshTokenRequest
 import com.applyfuse.fuse.data.token.LiveTokenStore
 import com.applyfuse.fuse.data.token.TokenStore
 import com.applyfuse.fuse.domain.model.AuthTokens
@@ -12,10 +13,10 @@ import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.components.SingletonComponent
-import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
 import javax.inject.Named
 import javax.inject.Singleton
+import kotlinx.serialization.json.Json
+import okhttp3.OkHttpClient
 
 // FUSE: NetworkModule wires the entire data-layer transport graph.
 //
@@ -94,7 +95,7 @@ object NetworkModule {
         tokenStore = tokenStore,
         refresh = {
             val current = tokenStore.read()
-                ?: throw com.applyfuse.fuse.core.AppError.Unauthorized
+                ?: throw AppError.Unauthorized
             val body = json.encodeToString(
                 RefreshTokenRequest.serializer(),
                 RefreshTokenRequest(refreshToken = current.refreshToken)

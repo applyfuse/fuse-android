@@ -34,13 +34,13 @@ local CI between every commit.
 | 1 | `AppError` expansion | ✔ | Forbidden, NotFound, Validation(message), Cancelled added. Commits b27e594/624729a/418fcfe. CI green. |
 | 2 | `HttpClient` interface + Live + Fake | ✔ | bare OkHttp (NOT Retrofit) + Fake. Shape is get/post(deserializer), NOT send/sendRaw — both deviations recorded in DATA_LAYER.md decision log. Commits 7d3027b/03aba58/bef96c2/fbf365a/30e12e8 (+78668d9/9d677ef fixes). CI green. |
 | 3 | `TokenStore` interface + InMemory + Live (EncryptedSharedPreferences) | ✔ | security-crypto 1.1.0-alpha06. Probe-and-skip for Live (coverage caveat logged). Commits e8a3b369/548fe8b/727dfcb/a4db5f7/0348876/da727a0. NOTE: AuthTokens/LiveTokenStore further modified in row 4 (expiresAt) and re-validated there. CI green. |
-| 4 | `LiveAuthRepository` wired to HttpClient + TokenStore | ✔ | Thin coordination layer. login/logout(best-effort server)/currentUser. AuthTokens gained expiresAt (mirror iOS, Decision 1a). Flat auth wire types, internal+@Serializable (Decision 2). Commits 2d897ec/a76d602/5889a70/e3afdc2/6c1c94e. Mirror iOS PR #10. **Built AFTER row 5 — build-order inversion logged in DATA_LAYER.md (harmless: dependency direction permits it).** Pending ci-local.sh re-validation of the whole set. |
+| 4 | `LiveAuthRepository` wired to HttpClient + TokenStore | ✔ | Thin coordination layer. login/logout(best-effort server)/currentUser. AuthTokens gained expiresAt (mirror iOS, Decision 1a). Flat auth wire types, internal+@Serializable (Decision 2). Commits 2d897ec/a76d602/5889a70/e3afdc2/6c1c94e/8c65837. Mirror iOS PR #10. **Built AFTER row 5 (build-order inversion). Hilt wiring pulled forward — see rows-4+10 unification note + DATA_LAYER.md.** Pending ci-local.sh re-validation of the combined set. |
 | 5 | `RefreshingHttpClient` (401-refresh-retry, single-flight) | ✔ | Decorator. Mutex + shared CompletableDeferred, leader-runs-directly. No requiresAuth flag (Option 2). Recursion-safe via bare-client refresh. Commits 6f2a1ce/ae5dfb2/088e009 (+af523aa fix). Mirror iOS PR #11. CI green. **Built BEFORE row 4 (see inversion note).** |
 | 6 | Feed: `FeedItem`, `FeedPage` domain + wire types | ☐ | Page-based. `FeedPage(items, page, hasMore)`. 1-indexed page. Server-authoritative has_more. |
 | 7 | Feed: `FeedState`, `FeedAction`, `feedReducer` + reducer tests | ☐ | Pure function. `FeedLoadingState` enum (Idle/Initial/Refreshing/LoadingMore). ~40 reducer tests, zero mocks. 7 invariants (see iOS decision log). |
 | 8 | Feed: `FeedViewModel` + VM tests | ☐ | Mirror AuthViewModel shape. `previousLoading` effect-firing guard. ~15 tests with FakeFeedRepository. |
 | 9 | Feed: `FeedScreen` @Composable | ☐ | Thin reader. 4 content shapes: initial-load spinner / empty / list+load-more / error. |
-| 10 | Feed: `LiveFeedRepository` + Hilt RepositoryModule wiring | ☐ | HttpClient-only (no TokenStore). Share the SAME RefreshingHttpClient as auth. Wires the refresh lambda (RefreshTokenRequest/RefreshResponse already defined in row 4). ~13 tests. |
+| 10 | Feed: `LiveFeedRepository` (+ binding only — Hilt transport wiring ALREADY DONE) | ☐ | **REDUCED from original scope.** The Hilt transport graph (Json, OkHttp, bare LiveHttpClient, TokenStore, the shared @Singleton RefreshingHttpClient + refresh lambda) was pulled forward into `di/NetworkModule.kt` with row 4 — Hilt whole-graph compile-time validation made rows 4+10 inseparable (see unification note + DATA_LAYER.md). Row 10 now only: add `LiveFeedRepository(httpClient)` (HttpClient-only, no TokenStore), @Binds it in RepositoryModule, ~13 tests. It injects the SAME bound HttpClient (the singleton RefreshingHttpClient) → shares auth's refresh for free, automatically. |
 | 11 | `DATA_LAYER.md` finalise | ☐ | A draft is committed alongside this file; update it as components land. Decision log already substantial — finalise the prose/wiring sections to match shipped code at the end. |
 | 12 | `CLAUDE.md` Phase status + Detekt conventions | ☐ | Final doc commit before the PR. |
 | 13 | (optional) Pagination primitives | — | DO NOT generalise. iOS decided against it (single consumer). Same call here. Recorded as a deliberate non-goal. |
@@ -49,13 +49,17 @@ local CI between every commit.
 `phase-2 → main` PR. Not before.**
 
 > **Row-numbering note (2026-05-19):** rows 1–5 are ✔. Rows 4 and 5
-> were built in inverted order (5 before 4); this is harmless
-> (dependency direction permits it) and fully explained in the
-> DATA_LAYER.md decision log ("Row 4/5 build-order inversion"). The
+> were built in inverted order (5 before 4); harmless (dependency
+> direction permits it), fully explained in the DATA_LAYER.md
+> decision log ("Row 4/5 build-order inversion"). Additionally,
+> row 10's Hilt transport wiring was pulled forward with row 4
+> because Hilt validates the whole dependency graph at compile time
+> — a repository with real deps cannot compile without its bindings
+> in any order ("Rows 4+10 Hilt wiring unified" in the decision
+> log). Row 10 is correspondingly reduced (see its row). The
 > commit-message row numbers earlier in history reflect an internal
-> working sequence that did not match this table; the decision log
-> reconciles them. From row 6 onward, commit numbering follows THIS
-> table.
+> working sequence; the decision log reconciles them. From row 6
+> onward, commit numbering follows THIS table.
 
 ## Out of scope
 
@@ -186,6 +190,12 @@ and-retry auth gets, for free, because the interceptor wraps the
 transport not the repository. Feed never writes tokens → no
 TokenStore dependency → minimal test surface (no fake token store
 in LiveFeedRepository tests).
+
+> **Realised (2026-05-19):** the shared client is the `@Singleton`
+> `HttpClient` bound in `di/NetworkModule.kt` (= the
+> `RefreshingHttpClient`). `LiveFeedRepository` at row 10 just
+> `@Inject`s `HttpClient` and gets that exact singleton instance —
+> the sharing is automatic, nothing extra to wire.
 
 ### — Pagination primitives: deliberately NOT generalised
 

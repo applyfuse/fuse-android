@@ -459,3 +459,49 @@ wire types defined in row 4. The single shared `@Singleton`
 
 NOT validated until `ci-local.sh` is green on `phase-2` for the
 combined row-4 + NetworkModule set.
+
+### 2026-05-19 — Row 6: Feed domain models — domain/wire seam (deviation from line-by-line iOS)
+
+**Decision.** `FeedItem` and `FeedPage` land in `domain/model/` as
+**pure Kotlin data classes with NO `@Serializable`** — mirroring
+the `User` / `AuthTokens` convention, not iOS's
+`FeedItem: Decodable` / `FeedPage: Decodable` (where wire and domain
+are folded into one struct).
+
+**Why this is a deliberate deviation, not an oversight.** iOS keeps
+the wire format ON the domain model (`Decodable` conformance).
+Android, from row 4 onward, established the OPPOSITE seam: domain
+models are pure (`User`, `AuthTokens` carry no serialization);
+`@Serializable` wire DTOs (`UserWire`, `LoginResponse`, …) live with
+the repository. Copying iOS line-by-line here would put
+`@Serializable` back onto the domain model and re-introduce exactly
+the wire/domain coupling row 4 deliberately removed — an
+*inconsistency within fuse-android*. `PHASE_2.md`'s working-style
+rule is explicit: "Consistency within fuse-android > slavish parity
+with fuse-ios." So the faithful mirror is structural, not literal:
+same fields, same `mock`/`empty` companions, same locked pagination
+contract (page 1-indexed, `hasMore` server-authoritative, no
+`total`) — but pure domain types.
+
+**"+ wire types" deferred to row 10, not dropped.** `PHASE_2.md`
+row 6 reads "Feed: `FeedItem`, `FeedPage` domain **+ wire types**".
+The `@Serializable` `FeedItemWire` / `FeedPageWire` are NOT in
+row 6; they land with `LiveFeedRepository` in row 10, exactly where
+the auth wire types live relative to `LiveAuthRepository` (in the
+repository file, not `domain/model/`). This is the row-4 pattern
+applied consistently. Flagged here so the deferral is a recorded
+decision, not a silently missed clause of the scope row.
+
+**No standalone model tests for row 6.** `User` and `AuthTokens`
+(equivalently trivial domain data classes) have ZERO standalone
+test files in this repo; their behaviour is exercised via the
+reducer/repository tests that consume them. `FeedItem`/`FeedPage`
+follow that established precedent — their value semantics get
+exercised by the feed reducer tests (row 7, ~40 tests) and the
+`LiveFeedRepository` tests (row 10). Adding bespoke model tests here
+would itself be an inconsistency. Recorded so the absence of a
+`FeedItemTest`/`FeedPageTest` is a decision, not an oversight.
+
+Completes PHASE_2 row 6: FeedItem ee57c9b, FeedPage 1e87417, this.
+NOT validated until `ci-local.sh` is green on `phase-2` — same
+per-row discipline as every prior row.

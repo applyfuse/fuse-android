@@ -158,6 +158,34 @@ should drop the "Retrofit" naming or note Android uses bare OkHttp.
 Flagged for the docs owner; not changed here (this file is Android
 wiring, not the cross-platform contract).
 
+### 2026-05-18 — Row 2: HttpClient shape = get/post(deserializer), NOT send(request)/sendRaw
+
+**Decision / deviation — flagged late, recorded now.** `PHASE_2.md`
+row 2 specifies the transport contract as `suspend fun <T>
+send(request): T` + `sendRaw`, with an `HTTPRequest` value type and
+a `requiresAuth:` flag (mirror of iOS `HTTPClientProtocol`). The
+Android implementation instead shipped `suspend fun <T> get(path,
+deserializer)` + `post(path, jsonBody, deserializer)` — no
+`HTTPRequest` value type, deserializer passed per call, no
+`requiresAuth`.
+
+This is a real interface-shape deviation from the documented
+contract. It was **not** flagged at row 2 (an omission in the
+per-row discipline — corrected here as soon as it was noticed,
+during row 4, while cross-checking the iOS source). It is validated
+and behaviourally complete (rows 2–5 green), and is arguably more
+idiomatic Kotlin (a request value object adds ceremony a
+two-verb interface does not need here), but the divergence is now a
+fact future readers must not trip over.
+
+*Action for canon:* the docs/iOS owner should decide whether
+`fuse-docs` records get/post as the Android-idiomatic realisation of
+the `send`/`sendRaw` contract (recommended — the contract is about
+"typed call → typed result or AppError", which both shapes satisfy),
+or whether Android should be reshaped to `send`/`sendRaw` for strict
+parity (costly — reopens rows 2–5). Surfaced, not buried; not
+resolved unilaterally.
+
 ### 2026-05-18 — Row 2: JSON = kotlinx.serialization
 
 **Decision.** JSON is **kotlinx.serialization 1.7.3** (+
@@ -246,7 +274,15 @@ follow-up for whoever owns CI: add an instrumented-test job
 somewhere, even if not in `ci-local.sh`. Until then, this gap is
 known and accepted, not hidden.
 
-### 2026-05-18 — Row 4: no `requiresAuth` flag (Option 2); leader-runs single-flight
+### 2026-05-18 — Row 5 (RefreshingHttpClient): no `requiresAuth` flag (Option 2); leader-runs single-flight
+
+> **Heading correction (appended 2026-05-19):** the entry below was
+> originally titled "Row 4". It concerns `RefreshingHttpClient`,
+> which is **PHASE_2.md row 5**, not row 4. The mistitle came from
+> an internal build-order numbering that did not match the
+> authoritative `PHASE_2.md` scope table. See the
+> "Row 4/5 build-order inversion" entry further down. Content
+> unchanged; only the row number was wrong.
 
 **Decision A — auth scoping (Option 2, user-confirmed).** The
 `HttpClient` interface keeps its row-2 signature: NO `requiresAuth:
@@ -288,6 +324,70 @@ completion so a later wave refreshes fresh. This is a structural
 implementation choice, not a behavioural deviation — recorded so a
 future reader comparing code to contract sees it was deliberate.
 
-Completes row 4: RefreshingHttpClient 6f2a1ce, tests ae5dfb2, this.
-Row 4 is NOT validated until ci-local.sh is green on phase-2 — same
-per-row discipline as rows 1–3.
+### 2026-05-19 — Row 4/5 build-order inversion (process note)
+
+**What happened.** The internal working sequence built PHASE_2.md
+**row 5** (`RefreshingHttpClient`) BEFORE PHASE_2.md **row 4**
+(`LiveAuthRepository` wired to HttpClient + TokenStore). The scope
+table's order is 4 then 5; the actual build order was 5 then 4.
+
+**Why nothing is broken.** The dependency direction permits it:
+`RefreshingHttpClient` decorates the `HttpClient` interface and has
+zero dependency on `LiveAuthRepository`. `LiveAuthRepository`
+depends on `HttpClient` (the interface) + `TokenStore`, not on
+`RefreshingHttpClient` concretely (Hilt injects whichever
+`HttpClient` impl — the shared refreshing one — at row 10). So both
+rows are internally consistent regardless of build order, and each
+was validated green via `ci-local.sh` independently.
+
+**Why it is logged.** Deviating from the authoritative scope
+ordering without surfacing it is exactly the silent-divergence
+failure class this project's discipline exists to prevent. It was a
+process miss (mine), caught when the real `PHASE_2.md` scope table
+was finally read against the work. Recorded so the commit history's
+row numbering (and the mistitled row-5 entry above) is explained,
+not mysterious, to a future reader.
+
+### 2026-05-19 — Row 4: AuthTokens gains `expiresAt` (mirror iOS); auth wire contract
+
+**Decision 1a (user-confirmed) — `expiresAt` parity.** `fuse-ios`
+`AuthTokens` is `{access, refresh, expiresAt: Date?}`. Android row 3
+had shipped only `{accessToken, refreshToken}` — a cross-platform
+divergence introduced without knowledge of the iOS shape. Row 4
+closes it: Android `AuthTokens` now has `expiresAt: Long?` (epoch
+millis, nullable, default null — additive/non-breaking). This
+modified row-3-validated code (`AuthTokens`, `LiveTokenStore`
+persistence, `InMemoryTokenStoreTest`); the whole row-4 set,
+including those row-3 files, was re-validated via `ci-local.sh` —
+row 3's prior green did NOT transfer.
+
+Android's `RefreshingHttpClient` is **reactive** (401-driven, row 5),
+so `expiresAt` is currently informational on Android — there is no
+proactive-expiry refresh consuming it yet. It is mirrored anyway for
+cross-platform parity and to avoid a future storage migration when a
+proactive refresh is added. Same "don't strand a field the contract
+implies" reasoning as the row-2 `Timeout` argument.
+
+**Decision 2 (user-confirmed) — auth wire shape mirrors iOS.**
+`POST /auth/login` → flat `LoginResponse { user, accessToken,
+refreshToken, expiresIn? }` (NOT a nested `{ user, tokens:{} }`
+envelope). `expiresIn` is seconds; converted to absolute epoch-millis
+`expiresAt` at decode time so the app reasons in absolute time.
+`logout` = best-effort `POST /auth/logout` (failure swallowed —
+offline logout must work), THEN `TokenStore.clear()` whose failure
+propagates. `currentUser` = guard on `tokenStore.read() == null` →
+`null` with no network; else `GET /me`. All three mirror
+`fuse-ios/Sources/Data/AuthRepository.swift` exactly. Wire types are
+`internal`, `@Serializable`, kept out of `domain/model/` — mirror of
+iOS's internal wire structs (the wire format is allowed to differ
+from domain shape; the seam lives in one file).
+
+`RefreshTokenRequest`/`RefreshResponse` wire types are included now
+(next to the auth wire contract) though the refresh lambda that uses
+them is wired in row 10's Hilt module — mirror of iOS keeping the
+refresh wire shapes beside the login ones.
+
+Completes PHASE_2 row 4: AuthTokens 2d897ec, LiveTokenStore
+a76d602, LiveAuthRepository 5889a70, tests e3afdc2, this. NOT
+validated until `ci-local.sh` is green on `phase-2` for this whole
+set — same per-row discipline as rows 1–3 and 5.

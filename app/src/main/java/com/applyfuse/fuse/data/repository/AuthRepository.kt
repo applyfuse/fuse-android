@@ -21,6 +21,18 @@ interface AuthRepository {
     suspend fun currentUser(): User?
 }
 
+// FUSE: seconds → millis. File-level private const, NOT a companion
+// on the @Serializable wire classes below. kotlinx.serialization
+// generates serializer() as a member of each class's companion
+// object; declaring our OWN `private companion object` on a
+// @Serializable class makes that whole companion (incl. the
+// generated serializer()) private and inaccessible to callers —
+// the exact compile error this replaced
+// ("Cannot access 'companion object Companion': it is private in
+// 'LoginResponse'"). A file-level const sidesteps the companion
+// entirely while keeping the magic number named (detekt-safe).
+private const val MILLIS_PER_SECOND = 1000L
+
 // FUSE: LiveAuthRepository — the real implementation, a THIN
 // coordination layer over HttpClient + TokenStore (mirror of
 // fuse-ios LiveAuthRepository, PHASE_2 row 4 / iOS PR #10).
@@ -61,7 +73,7 @@ class LiveAuthRepository @Inject constructor(
         // failure, however, is a real problem and DOES propagate —
         // the local session genuinely did not end.
         try {
-            httpClient.post(PATH_LOGOUT, EMPTY_JSON) { }
+            httpClient.post<Unit>(PATH_LOGOUT, EMPTY_JSON) { }
         } catch (e: AppError) {
             // FUSE: intentionally swallowed — see above. Caught
             // narrowly (AppError, the only thing HttpClient throws)
@@ -98,6 +110,11 @@ class LiveAuthRepository @Inject constructor(
 // surgical edit in ONE place. internal (not private) so tests in
 // the same module can build fixtures.
 //
+// NOTE: NONE of these @Serializable classes declares its own
+// companion object — kotlinx.serialization owns the companion (it
+// puts serializer() there). Shared constants live at file scope
+// (MILLIS_PER_SECOND above), never in a private companion here.
+//
 // Flat shape mirrors fuse-ios LoginResponse exactly (Decision 2,
 // user-confirmed): NOT a nested { user, tokens:{} } envelope.
 @Serializable
@@ -132,10 +149,6 @@ internal data class LoginResponse(
             refreshToken = refreshToken,
             expiresAt = expiresIn?.let { nowMillis + it * MILLIS_PER_SECOND }
         )
-
-    private companion object {
-        const val MILLIS_PER_SECOND = 1000L
-    }
 }
 
 // FUSE: Refresh-endpoint wire shapes. Separate from LoginResponse
@@ -161,10 +174,6 @@ internal data class RefreshResponse(
             refreshToken = refreshToken,
             expiresAt = expiresIn?.let { nowMillis + it * MILLIS_PER_SECOND }
         )
-
-    private companion object {
-        const val MILLIS_PER_SECOND = 1000L
-    }
 }
 
 // FUSE: FakeAuthRepository — UNCHANGED from Phase 1. The feature

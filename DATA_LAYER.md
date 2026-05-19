@@ -505,3 +505,50 @@ would itself be an inconsistency. Recorded so the absence of a
 Completes PHASE_2 row 6: FeedItem ee57c9b, FeedPage 1e87417, this.
 NOT validated until `ci-local.sh` is green on `phase-2` — same
 per-row discipline as every prior row.
+
+### 2026-05-19 — Row 7: FeedState shape — raw `AppError?` vs Auth's `String?` (intra-repo difference)
+
+**Decision.** `FeedState.error` holds the raw `AppError?`.
+`AuthState.errorMessage` (Phase 1) holds a pre-stringified
+`String?` (its reducer calls `error.userMessage` and stores the
+string). The two features deliberately differ.
+
+**Why.** This mirrors iOS exactly — `fuse-ios FeedState.error` is
+`AppError?`, `fuse-ios AuthState` carries a string. More
+importantly, the PHASE_2.md feed-reducer invariants are written
+against the raw error ("`feedFailed` records the error and returns
+to `.idle`"), and invariant 6 ("failures don't wipe items")
+reasons about the error case, not a message. Storing the raw
+`AppError` keeps the reducer pure and string-free (it never
+constructs user copy), and pushes message derivation to the edge —
+row 8's `FeedViewModel` / row 9's `FeedScreen` call
+`error.userMessage` where the UI actually needs it. Auth chose the
+other split in Phase 1; both are internally valid. This is an
+intra-repo *consistency* note, not a cross-platform deviation
+(iOS does the same per-feature split). Recorded so a future reader
+seeing `AuthState.errorMessage: String?` next to
+`FeedState.error: AppError?` knows the difference is deliberate and
+why, rather than guessing one is a mistake.
+
+**`NOT_LOADED = 0` sentinel.** `currentPage` starts at `0` meaning
+"nothing loaded yet"; real pages are 1-indexed (locked pagination
+decision) so `0` can never collide. Exposed as a named
+`companion const FeedState.NOT_LOADED` (not a bare `0`) so it is
+not a `MagicNumber`, reads clearly in the reducer/tests, and row 8's
+ViewModel can reference the same constant. Mirror of iOS's
+`currentPage == 0` convention.
+
+**`applyFeedLoaded` extraction.** `feedReducer` splits the
+`FeedLoaded` branch into a private `applyFeedLoaded(state, page)`,
+exactly as iOS split it and exactly as PHASE_2.md's Detekt-
+conventions section prescribed ("the reducer `when` can trip
+`CyclomaticComplexMethod`; extract `applyFeedLoaded`"). The natural
+seam is outer action-dispatch vs the loading-state-driven
+replace/append/drop decision. Behaviour identical; structural split
+only — recorded so code-vs-contract readers see it was the
+predicted, prescribed move, not an ad-hoc refactor.
+
+Completes PHASE_2 row 7: FeedState 7f35061, FeedAction d4195f0,
+feedReducer c807563, FeedReducerTest (41 tests) 927e326, this. NOT
+validated until `ci-local.sh` is green on `phase-2` — same per-row
+discipline as every prior row.

@@ -31,22 +31,31 @@ local CI between every commit.
 
 | # | Item | Status | Notes |
 |---|---|---|---|
-| 1 | `AppError` expansion | ☐ | Add Forbidden, NotFound, Validation(message), Cancelled to the sealed class. Mirror of iOS PR #3. |
-| 2 | `HttpClient` interface + Retrofit-backed Live + Fake | ☐ | Transport contract. `suspend fun <T> send(request): T` + `sendRaw`. Status→AppError mapping table (see DATA_LAYER.md). |
-| 3 | `TokenStore` interface + InMemory + Live (EncryptedSharedPreferences) | ☐ | Mirror iOS PR #5/#6. Live uses androidx.security.crypto. Probe-skip pattern in tests if keystore unavailable. |
-| 4 | `LiveAuthRepository` wired to HttpClient + TokenStore | ☐ | Thin coordination layer. login/logout/currentUser. Internal wire types. Mirror iOS PR #10. |
-| 5 | `RefreshingHttpClient` (401-refresh-retry, single-flight) | ☐ | OkHttp Authenticator OR a decorator implementing HttpClient. Single-flight via `kotlinx.coroutines.sync.Mutex` + a shared in-flight `Deferred`. Recursion-safe: refresh call uses the BARE client. Mirror iOS PR #11. |
+| 1 | `AppError` expansion | ✔ | Forbidden, NotFound, Validation(message), Cancelled added. Commits b27e594/624729a/418fcfe. CI green. |
+| 2 | `HttpClient` interface + Live + Fake | ✔ | bare OkHttp (NOT Retrofit) + Fake. Shape is get/post(deserializer), NOT send/sendRaw — both deviations recorded in DATA_LAYER.md decision log. Commits 7d3027b/03aba58/bef96c2/fbf365a/30e12e8 (+78668d9/9d677ef fixes). CI green. |
+| 3 | `TokenStore` interface + InMemory + Live (EncryptedSharedPreferences) | ✔ | security-crypto 1.1.0-alpha06. Probe-and-skip for Live (coverage caveat logged). Commits e8a3b369/548fe8b/727dfcb/a4db5f7/0348876/da727a0. NOTE: AuthTokens/LiveTokenStore further modified in row 4 (expiresAt) and re-validated there. CI green. |
+| 4 | `LiveAuthRepository` wired to HttpClient + TokenStore | ✔ | Thin coordination layer. login/logout(best-effort server)/currentUser. AuthTokens gained expiresAt (mirror iOS, Decision 1a). Flat auth wire types, internal+@Serializable (Decision 2). Commits 2d897ec/a76d602/5889a70/e3afdc2/6c1c94e. Mirror iOS PR #10. **Built AFTER row 5 — build-order inversion logged in DATA_LAYER.md (harmless: dependency direction permits it).** Pending ci-local.sh re-validation of the whole set. |
+| 5 | `RefreshingHttpClient` (401-refresh-retry, single-flight) | ✔ | Decorator. Mutex + shared CompletableDeferred, leader-runs-directly. No requiresAuth flag (Option 2). Recursion-safe via bare-client refresh. Commits 6f2a1ce/ae5dfb2/088e009 (+af523aa fix). Mirror iOS PR #11. CI green. **Built BEFORE row 4 (see inversion note).** |
 | 6 | Feed: `FeedItem`, `FeedPage` domain + wire types | ☐ | Page-based. `FeedPage(items, page, hasMore)`. 1-indexed page. Server-authoritative has_more. |
 | 7 | Feed: `FeedState`, `FeedAction`, `feedReducer` + reducer tests | ☐ | Pure function. `FeedLoadingState` enum (Idle/Initial/Refreshing/LoadingMore). ~40 reducer tests, zero mocks. 7 invariants (see iOS decision log). |
 | 8 | Feed: `FeedViewModel` + VM tests | ☐ | Mirror AuthViewModel shape. `previousLoading` effect-firing guard. ~15 tests with FakeFeedRepository. |
 | 9 | Feed: `FeedScreen` @Composable | ☐ | Thin reader. 4 content shapes: initial-load spinner / empty / list+load-more / error. |
-| 10 | Feed: `LiveFeedRepository` + Hilt RepositoryModule wiring | ☐ | HttpClient-only (no TokenStore). Share the SAME RefreshingHttpClient as auth. ~13 tests. |
-| 11 | `DATA_LAYER.md` finalise | ☐ | A draft is committed alongside this file; update it as components land. |
+| 10 | Feed: `LiveFeedRepository` + Hilt RepositoryModule wiring | ☐ | HttpClient-only (no TokenStore). Share the SAME RefreshingHttpClient as auth. Wires the refresh lambda (RefreshTokenRequest/RefreshResponse already defined in row 4). ~13 tests. |
+| 11 | `DATA_LAYER.md` finalise | ☐ | A draft is committed alongside this file; update it as components land. Decision log already substantial — finalise the prose/wiring sections to match shipped code at the end. |
 | 12 | `CLAUDE.md` Phase status + Detekt conventions | ☐ | Final doc commit before the PR. |
 | 13 | (optional) Pagination primitives | — | DO NOT generalise. iOS decided against it (single consumer). Same call here. Recorded as a deliberate non-goal. |
 
 **When every ☐ above is ✔ and local CI is green → open the
 `phase-2 → main` PR. Not before.**
+
+> **Row-numbering note (2026-05-19):** rows 1–5 are ✔. Rows 4 and 5
+> were built in inverted order (5 before 4); this is harmless
+> (dependency direction permits it) and fully explained in the
+> DATA_LAYER.md decision log ("Row 4/5 build-order inversion"). The
+> commit-message row numbers earlier in history reflect an internal
+> working sequence that did not match this table; the decision log
+> reconciles them. From row 6 onward, commit numbering follows THIS
+> table.
 
 ## Out of scope
 

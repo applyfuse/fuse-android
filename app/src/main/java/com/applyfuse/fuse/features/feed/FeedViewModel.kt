@@ -5,11 +5,13 @@ import androidx.lifecycle.viewModelScope
 import com.applyfuse.fuse.core.AppError
 import com.applyfuse.fuse.data.repository.FakeFeedRepository
 import com.applyfuse.fuse.data.repository.FeedRepository
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 // FUSE: FeedViewModel owns state, calls the reducer, handles
 // effects. Mirror of fuse-ios Sources/Features/Feed/FeedViewModel.
@@ -38,19 +40,24 @@ import kotlinx.coroutines.launch
 // completely untouched (zero auth-regression risk). Recorded in
 // DATA_LAYER.md decision log (Row 8).
 //
-// FUSE: No @HiltViewModel / @Inject yet. FeedRepository has no
-// Hilt binding until row 10's LiveFeedRepository @Binds, and Hilt
-// validates the WHOLE graph at compile time (the rows-4+10
-// lesson). Annotating @HiltViewModel now, with nothing yet
-// injecting FeedViewModel (FeedScreen is row 9), would fail with
-// [Dagger/MissingBinding] FeedRepository. The constructor already
-// takes FeedRepository so adding @HiltViewModel @Inject in row
-// 9/10 alongside the binding is a one-line change. Tests construct
-// it directly with FakeFeedRepository — no Hilt needed. Flagged in
-// the decision log so the missing annotation reads as deliberate
-// sequencing, not an oversight.
+// FUSE: @HiltViewModel @Inject — added row 9 (Option 1). The
+// row-8 decision log flagged this as a DELIBERATE deferral: Hilt
+// validates the WHOLE graph at compile time, so annotating
+// @HiltViewModel before FeedRepository had a binding would have
+// failed [Dagger/MissingBinding]. Row 9 added the
+// FeedRepository → LiveFeedRepository @Binds (RepositoryModule)
+// FIRST, so the graph now resolves and the annotation is safe.
+// This closes the second of FeedViewModel's two logged deviations
+// from fuse-docs ARCHITECTURE.md §3/§5/§6 (the DI mapping says the
+// Android VM is @HiltViewModel) — the FIRST (standalone, not
+// BaseViewModel) remains a justified per-feature deviation for the
+// effect-firing guard, with §1's "pick the shape per feature"
+// licence. FeedViewModel is now back on the contract's DI mapping
+// while keeping its justified standalone form. Recorded in
+// DATA_LAYER.md decision log (Row 9).
 
-class FeedViewModel(
+@HiltViewModel
+class FeedViewModel @Inject constructor(
     private val feedRepository: FeedRepository
 ) : ViewModel() {
 

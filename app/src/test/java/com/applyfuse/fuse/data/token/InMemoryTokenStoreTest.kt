@@ -37,6 +37,14 @@ class InMemoryTokenStoreTest {
             store.write(AuthTokens.mock)
             assertEquals(AuthTokens.mock, store.read())
         }
+
+        @Test
+        fun `round-trips a non-null expiresAt`() = runTest {
+            val tokens = AuthTokens("a", "r", expiresAt = 1_750_000_000_000L)
+            store.write(tokens)
+            assertEquals(tokens, store.read())
+            assertEquals(1_750_000_000_000L, store.read()?.expiresAt)
+        }
     }
 
     @Nested
@@ -48,6 +56,13 @@ class InMemoryTokenStoreTest {
             store.write(AuthTokens("a1", "r1"))
             store.write(AuthTokens("a2", "r2"))
             assertEquals(AuthTokens("a2", "r2"), store.read())
+        }
+
+        @Test
+        fun `overwrite with null-expiry pair drops a prior expiresAt`() = runTest {
+            store.write(AuthTokens("a1", "r1", expiresAt = 999L))
+            store.write(AuthTokens("a2", "r2", expiresAt = null))
+            assertNull(store.read()?.expiresAt)
         }
     }
 

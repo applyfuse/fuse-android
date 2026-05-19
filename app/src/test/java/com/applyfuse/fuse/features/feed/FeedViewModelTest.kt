@@ -2,8 +2,10 @@ package com.applyfuse.fuse.features.feed
 
 import com.applyfuse.fuse.core.AppError
 import com.applyfuse.fuse.data.repository.FakeFeedRepository
+import com.applyfuse.fuse.data.repository.FeedRepository
 import com.applyfuse.fuse.domain.model.FeedItem
 import com.applyfuse.fuse.domain.model.FeedPage
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -302,32 +304,116 @@ class FeedViewModelTest {
         }
 
         @Test
-        fun `LoadMore while a load is in flight does not double-fire`() = runTest {
-            // FUSE: the precise bug Option C exists to prevent. Two
-            // LoadMore in a row: the first transitions to
-            // LoadingMore (fires); the second, before the first
-            // completes, finds loading != Idle so the reducer
-            // no-ops it (loading unchanged) → previousLoading ==
-            // newLoading → guard filters it → NO second request for
-            // the same page. With FakeFeedRepository's synchronous
-            // suspend, advanceUntilIdle drains the first fully, so
-            // we assert the stronger end-state: no duplicate page
-            // in loadFeedCalls.
-            val fake = FakeFeedRepository(
-                stubbedPages = mapOf(
+        fun `LoadMore while a load is genuinely in flight does not double-fire`() = runTest {
+            // FUSE: the precise bug Option C exists to prevent —
+            // now pinned with a repository that ACTUALLY suspends
+            // mid-load, so "in flight" is real, not a timing
+            // accident.
+            //
+            // My row-8 defect (commit 738c9f3): the original test
+            // used FakeFeedRepository, whose loadFeed is a
+            // synchronous suspend that never parks. Under
+            // UnconfinedTestDispatcher's eager dispatch the first
+            // LoadMore ran to COMPLETION (including its re-entrant
+            // FeedLoaded send that returns to Idle) BEFORE the
+            // second LoadMore line executed — so the second LoadMore
+            // legitimately loaded page 3 ([1,2,3]). That is correct
+            // pagination, not a double-fire; the test asserted a
+            // concurrency property with a fake structurally
+            // incapable of concurrency. The test was wrong, not
+            // FeedViewModel.
+            //
+            // Correct fix (the deterministic gate pattern this
+            // repo's DATA_LAYER.md "Testing the data layer" already
+            // prescribes for RefreshingHttpClient's single-flight
+            // test — a CompletableDeferred the test releases, never
+            // delay()): GateFeedRepository.loadFeed parks on a
+            // shared Deferred until the test opens the gate. The
+            // first LoadMore enters loadFeed and SUSPENDS there;
+            // while it is parked the second LoadMore fires — the
+            // reducer sees loading == LoadingMore (non-Idle),
+            // no-ops it, previousLoading == newLoading, the guard
+            // filters it → no second request. THEN the gate opens
+            // and the first load completes. Genuine in-flight
+            // concurrency; the guarantee is actually exercised.
+            val gate = CompletableDeferred<Unit>()
+            val repo = GateFeedRepository(
+                gate = gate,
+                pages = mapOf(
                     1 to FeedPage(listOf(itemA), page = 1, hasMore = true),
                     2 to FeedPage(listOf(itemB), page = 2, hasMore = true)
                 )
             )
-            val vm = FeedViewModel(fake)
+            val vm = FeedViewModel(repo)
+
+            // Page 1 loads fully (gate already open for it: the
+            // gate only guards page >= 2 — see GateFeedRepository).
             vm.send(FeedAction.LoadInitial)
             advanceUntilIdle()
+            assertEquals(listOf(1), repo.loadFeedCalls)
+            assertEquals(FeedLoadingState.Idle, vm.state.value.loading)
+
+            // First LoadMore: enters loadFeed(page=2) and SUSPENDS
+            // on the gate. State is now LoadingMore, request
+            // recorded, but the call has NOT returned.
             vm.send(FeedAction.LoadMore)
+            assertEquals(FeedLoadingState.LoadingMore, vm.state.value.loading)
+            assertEquals(listOf(1, 2), repo.loadFeedCalls)
+
+            // Second LoadMore WHILE the first is genuinely parked
+            // in-flight: reducer no-ops (loading != Idle), guard
+            // filters it → NO new request.
             vm.send(FeedAction.LoadMore)
+            assertEquals(
+                listOf(1, 2),
+                repo.loadFeedCalls
+            ) // FUSE: still [1,2] — no [1,2,2], the double-fire is prevented.
+
+            // Release the in-flight load; it completes normally.
+            gate.complete(Unit)
             advanceUntilIdle()
-            // FUSE: page 2 requested exactly once despite two
-            // LoadMore sends — no [1,2,2] or [1,2,3].
-            assertEquals(listOf(1, 2), fake.loadFeedCalls)
+            assertEquals(listOf(itemA, itemB), vm.state.value.items)
+            assertEquals(2, vm.state.value.currentPage)
+            assertEquals(FeedLoadingState.Idle, vm.state.value.loading)
+            // FUSE: end state confirms exactly one page-2 request
+            // across the whole sequence despite two LoadMore sends.
+            assertEquals(listOf(1, 2), repo.loadFeedCalls)
+        }
+    }
+
+    // FUSE: GateFeedRepository — a FeedRepository that genuinely
+    // SUSPENDS mid-load so a test can observe "a load is in
+    // flight". page 1 returns immediately (lets LoadInitial settle
+    // deterministically); page >= 2 awaits `gate` before
+    // returning, so the test controls exactly when the in-flight
+    // LoadMore completes. Deterministic, never delay() — the same
+    // gate discipline DATA_LAYER.md prescribes for the
+    // RefreshingHttpClient single-flight test. Local to this file
+    // because it exists only for the one in-flight scenario;
+    // FakeFeedRepository (synchronous) remains correct for every
+    // other test.
+    private class GateFeedRepository(
+        private val gate: CompletableDeferred<Unit>,
+        private val pages: Map<Int, FeedPage>
+    ) : FeedRepository {
+
+        var loadFeedCalls: List<Int> = emptyList()
+            private set
+
+        override suspend fun loadFeed(page: Int): FeedPage {
+            loadFeedCalls = loadFeedCalls + page
+            if (page >= GATED_FROM_PAGE) {
+                gate.await()
+            }
+            return pages[page] ?: FeedPage(emptyList(), page, hasMore = false)
+        }
+
+        private companion object {
+            // FUSE: page 1 is ungated so LoadInitial settles
+            // without test ceremony; only LoadMore (page >= 2) is
+            // held in flight. Named so it is not a MagicNumber and
+            // the intent is explicit.
+            const val GATED_FROM_PAGE = 2
         }
     }
 }

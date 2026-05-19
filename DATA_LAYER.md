@@ -552,3 +552,114 @@ Completes PHASE_2 row 7: FeedState 7f35061, FeedAction d4195f0,
 feedReducer c807563, FeedReducerTest (41 tests) 927e326, this. NOT
 validated until `ci-local.sh` is green on `phase-2` — same per-row
 discipline as every prior row.
+
+### 2026-05-19 — Row 8: FeedViewModel is standalone (Option C), NOT a BaseViewModel subclass
+
+**Decision (user-confirmed, Option C).** `FeedViewModel` extends
+`androidx.lifecycle.ViewModel()` directly and implements its own
+`send()` / `handleEffect()` / `performLoad()` plus its own
+`MutableStateFlow`. It deliberately does NOT extend `BaseViewModel`
+(the in-repo `Store<S,A>` analogue that `AuthViewModel` uses).
+
+**Why — the effect-firing guard.** `feedReducer`'s invariant-3
+guards (LoadInitial when items exist, LoadMore when `hasMore=false`,
+LoadMore/Refresh while loading) are NO-OPS: they return state with
+`loading` UNCHANGED. The ViewModel must only spawn a network effect
+when the reducer actually transitioned INTO a new loading state.
+iOS's `FeedViewModel.send()` does this by capturing
+`previousLoading` BEFORE the reducer, then
+`guard loading != previousLoading, loading != .idle`.
+`BaseViewModel.send()` is **final** and unconditionally launches
+`handleEffect` AFTER the reducer with NO pre-reducer hook — so a
+`BaseViewModel` subclass physically cannot see `previousLoading`.
+Three options were weighed and the user chose C:
+
+- **A — guard inside post-reducer `handleEffect` using only the
+  post-reducer state.** Rejected: it cannot distinguish "reducer
+  just transitioned me into LoadingMore (fire)" from "reducer left
+  me in LoadingMore because it no-op'd a *concurrent* LoadMore
+  (don't fire)". That is a real double-fire on rapid
+  scroll-to-bottom — the common path — and shipping a known wasted
+  duplicate request is exactly the silent-defect class this project
+  refuses.
+- **B — make `BaseViewModel.send()` open / add a pre-reducer
+  hook.** Architecturally clean (default keeps auth unchanged) but
+  it modifies Phase-1-validated SHARED core that the validated auth
+  stack rides on, forcing auth re-validation and a "reopened
+  validated core" record. Viable but higher blast radius.
+- **C — standalone `FeedViewModel` with its own `send()`.**
+  Chosen. Faithful mirror of iOS (whose `FeedViewModel` is itself a
+  deliberately-standalone `ObservableObject` that does NOT route
+  through the shared `Store`, for this exact reason). Leaves
+  `BaseViewModel` / `AuthViewModel` byte-for-byte untouched — zero
+  auth-regression risk. Cost: ~15 lines of state/`send()` plumbing
+  are reimplemented rather than inherited. That duplication is the
+  accepted price for not shipping A's bug and not reopening B's
+  validated core. `PHASE_2.md` says "mirror AuthViewModel shape"
+  but also "consistency within fuse-android > slavish iOS parity"
+  and the iOS source itself documents FeedViewModel as
+  intentionally NOT the shared store — so C is the iOS-faithful
+  reading, with the deviation from "extend BaseViewModel" recorded
+  loudly here rather than buried.
+
+The guard implemented: `previousLoading = state.loading` → run
+`feedReducer` → `if (newLoading == previousLoading || newLoading ==
+Idle) return` → else launch effect. Condition 1 filters reducer
+no-ops; condition 2 filters the response actions
+(`FeedLoaded`/`FeedFailed`/`DismissError`, which return to `Idle`)
+so a successful load does not recurse into another load. Pinned by
+`FeedViewModelTest`'s "Effect-firing guard" tests, which assert on
+`FakeFeedRepository.loadFeedCalls` (actual request behaviour, not
+just state) — including the explicit
+LoadMore-while-in-flight-does-not-double-fire case that is the
+whole reason C exists.
+
+### 2026-05-19 — Row 8: FeedRepository interface + Fake precede LiveFeedRepository (scope-ordering)
+
+**Decision / scope-ordering resolution (surfaced, not buried).**
+`PHASE_2.md` row 8 specifies "~15 tests with `FakeFeedRepository`",
+but `FeedViewModel` (row 8) cannot compile or be tested without a
+`FeedRepository` type to inject and a fake to test against — and
+the *repository* is PHASE_2.md **row 10** (`LiveFeedRepository` +
+`@Binds` + ~13 repo tests). This is the **same latent scope-table
+coupling family** as the rows-4+10 Hilt issue: a later row owns a
+type an earlier row structurally depends on.
+
+Unlike rows 4+10 (where Hilt's whole-graph validation forced a
+whole module forward), this one has a clean minimal resolution that
+does NOT pull row 10's substance forward: the `FeedRepository`
+**interface** + `FakeFeedRepository` are the minimal contract row 8
+needs, so they land in row 8 (`data/repository/FeedRepository.kt`).
+The substantive row-10 work — `LiveFeedRepository` (real
+HttpClient-backed impl), its `@Serializable` `FeedItemWire` /
+`FeedPageWire` DTOs, the Hilt `@Binds`, and ~13 repository tests —
+all stays in row 10, added to the same file.
+
+**Why this is the established pattern, not a new deviation.** This
+mirrors EXACTLY how `AuthRepository` existed in Phase 1: the
+interface + `FakeAuthRepository` shipped in Phase 1, and row 4 only
+swapped the `LiveAuthRepository` BODY from stubs to real
+coordination. Interface-and-fake-precede-live-impl is already how
+this repo is structured (`AuthRepository.kt` holds interface + Live
++ Fake in one file). Row 8 introducing `FeedRepository` interface +
+fake, with row 10 adding the Live body to the same file, is that
+identical pattern applied to feed — not an ad-hoc reordering.
+
+**Hilt deferral within row 8 (flagged).** `FeedViewModel` takes
+`FeedRepository` as a constructor param but is NOT annotated
+`@HiltViewModel`/`@Inject` yet. `FeedRepository` has no Hilt binding
+until row 10's `LiveFeedRepository @Binds`; annotating
+`@HiltViewModel` now — with nothing yet injecting `FeedViewModel`
+(its injector, `FeedScreen`, is row 9) — would re-trigger the exact
+rows-4+10 `[Dagger/MissingBinding]` whole-graph failure. With no
+injection site and no annotation, `FeedViewModel` is simply not in
+the Hilt graph and cannot trip validation; tests construct it
+directly with `FakeFeedRepository`. Row 9/10 adds `@HiltViewModel
+@Inject` + the `@Binds` together (a one-line change). Recorded so
+the missing annotation reads as deliberate sequencing learned from
+rows 4+10, not an oversight.
+
+Completes PHASE_2 row 8: FeedRepository+Fake 9134d05, FeedViewModel
+42923c4, FeedViewModelTest (16 tests) 738c9f3, this. NOT validated
+until `ci-local.sh` is green on `phase-2` — same per-row discipline
+as every prior row.

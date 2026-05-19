@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -106,7 +105,9 @@ private fun FeedContent(
     ) {
         when {
             state.loading == FeedLoadingState.Initial ->
-                FullScreenSpinner()
+                // FUSE: full-screen variant — the first ever load,
+                // nothing else on screen yet.
+                LoadingSpinner(fullScreen = true)
 
             state.isEmpty ->
                 EmptyPlaceholder()
@@ -138,15 +139,32 @@ private fun FeedContent(
     }
 }
 
+// FUSE: one spinner, two sizes. fullScreen=true is the initial-load
+// spinner (centred, larger, fills the screen); fullScreen=false is
+// the load-more footer spinner (smaller, sits at the list bottom).
+// Merged from the former FullScreenSpinner + FooterSpinner — they
+// differed only in size/stroke and a footer wrapper, so a single
+// parameterised composable is DRYer AND keeps the file at 12
+// functions (detekt TooManyFunctions thresholdInFiles=12; the 4
+// @Preview fns are counted by the in-files rule despite
+// ignoreAnnotated, exactly as for AuthScreen which sits at 12).
 @Composable
-private fun FullScreenSpinner() {
+private fun LoadingSpinner(fullScreen: Boolean) {
+    val sizeModifier = if (fullScreen) {
+        Modifier.fillMaxSize()
+    } else {
+        Modifier
+            .fillMaxWidth()
+            .padding(16.dp)
+    }
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = sizeModifier,
         contentAlignment = Alignment.Center
     ) {
         CircularProgressIndicator(
+            modifier = if (fullScreen) Modifier else Modifier.size(24.dp),
             color = Color(0xFF5D52CC),
-            strokeWidth = 3.dp
+            strokeWidth = if (fullScreen) 3.dp else 2.dp
         )
     }
 }
@@ -195,7 +213,7 @@ private fun FeedList(
         item {
             when {
                 state.loading == FeedLoadingState.LoadingMore ->
-                    FooterSpinner()
+                    LoadingSpinner(fullScreen = false)
 
                 state.canLoadMore ->
                     LoadMoreButton(
@@ -230,22 +248,6 @@ private fun FeedRow(item: FeedItem) {
             text = item.body,
             style = MaterialTheme.typography.bodyMedium,
             color = Color(0xFFB8B8D8)
-        )
-    }
-}
-
-@Composable
-private fun FooterSpinner() {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(24.dp),
-            color = Color(0xFF5D52CC),
-            strokeWidth = 2.dp
         )
     }
 }
